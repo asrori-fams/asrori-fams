@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#1e3a6e">
+  <title>Asrori Fam's — Panel Admin</title>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" media="print" onload="this.media='all'">
+  <?!= include('Styles'); ?>
+  <?!= include('AdminStyles'); ?>
+</head>
+<body class="admin-mode">
+  <script>
+  // Penjaga awal: menampilkan penyebab bila aplikasi gagal dimuat, alih-alih tertahan di layar "Memuat".
+  (function () {
+    function show(title, detail) {
+      var b = document.querySelector('.boot'); if (!b) return;
+      b.innerHTML = '<div class="boot-logo">!</div><p style="max-width:440px;padding:0 20px;line-height:1.5"><b>' + title + '</b><br>' + detail +
+        '</p><button onclick="location.reload()" style="border:0;border-radius:14px;padding:12px 20px;font-weight:700;background:#2f6fed;color:#fff">Muat ulang</button>';
+    }
+    window.addEventListener('error', function (e) {
+      if (e.target && e.target !== window) return; // gagal memuat gambar/skrip luar ditangani terpisah
+      var code = '';
+      try {
+        var L = document.documentElement.outerHTML.split('\n'), n = (e.lineno || 0) - 2;
+        code = [L[n - 1], L[n]].filter(Boolean).map(function (x) { return x.trim().slice(0, 140).replace(/[&<>]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]; }); }).join('<br>');
+      } catch (x) {}
+      show('Terjadi kesalahan JavaScript', (e.message || 'tidak diketahui') + (e.lineno ? ' (baris ' + e.lineno + ')' : '') +
+        (code ? '<br><code style="display:block;text-align:left;font-size:11px;background:#fff;border-radius:8px;padding:8px;margin:8px 0;word-break:break-all">' + code + '</code>' : '') +
+        '<small>Kode di file Apps Script berbeda dari file rilis (biasanya berubah saat disalin-tempel). Di spreadsheet jalankan <b>Asrori Fam\'s &gt; 5. Cek instalasi</b> untuk melihat file mana, tempel ulang file itu, lalu buat Versi baru.</small>');
+    });
+    setTimeout(function () {
+      if (!document.querySelector('.boot')) return;
+      if (!window.AF_SCRIPTS_LOADED) show('File Scripts tidak termuat', 'Pastikan file HTML bernama persis <code>Scripts</code> berisi kode lengkap (baris terakhir <code>&lt;/script&gt;</code>), simpan, lalu buat Versi baru di Kelola deployment.');
+      else show('Server belum merespons', 'Kemungkinan: (1) browser login ke beberapa akun Google, coba jendela Samaran; (2) izin belum diberikan, jalankan menu Setup di spreadsheet; (3) koneksi lambat. Detail: buka menu <b>Asrori Fam\'s &gt; 5. Cek instalasi</b> di spreadsheet.');
+    }, 20000);
+  })();
+  </script>
+  <div class="adm-shell">
+    <aside class="adm-side" id="adm-side" aria-label="Menu admin"></aside>
+    <div class="adm-scrim" data-action="adm-side-close"></div>
+    <div class="adm-main">
+      <header class="adm-top" id="adm-top"></header>
+      <div id="app" class="app">
+        <main id="view" class="view" aria-live="polite">
+          <div class="boot"><div class="boot-logo">A</div><p>Memuat Panel Admin…</p></div>
+        </main>
+      </div>
+    </div>
+  </div>
+
+  <div id="sheet" class="sheet" hidden>
+    <div class="sheet-backdrop" data-action="close-sheet"></div>
+    <section class="sheet-panel" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
+      <div class="sheet-grip"></div>
+      <header class="sheet-head">
+        <h2 id="sheet-title"></h2>
+        <button class="icon-btn" data-action="close-sheet" aria-label="Tutup">✕</button>
+      </header>
+      <div id="sheet-body" class="sheet-body"></div>
+    </section>
+  </div>
+  <div id="lightbox" class="lightbox" hidden></div>
+  <div id="toast" class="toast" role="status" hidden></div>
+
+  <script>window.AF_ADMIN = true;</script>
+  <?!= include('Scripts'); ?>
+  <?!= include('AdminScripts'); ?>
+</body>
+</html>
