@@ -35,7 +35,8 @@ const store = {
 };
 
 /* ---------- API ---------- */
-function api(fn, ...args) {
+function api(fn) {
+  const args = Array.prototype.slice.call(arguments, 1);
   return new Promise((resolve, reject) => {
     const done = r => (r && r.ok) ? resolve(r.data) : reject((r && r.error) || { message: 'Tidak ada respons dari server.' });
     if (window.__MOCK__) { window.__MOCK__(fn, args).then(done, reject); return; }
@@ -76,12 +77,12 @@ function fmtDate(d, withDay) {
   return hari + ', ' + s;
 }
 function fmtMonth(p) { const [y, m] = String(p).split('-').map(Number); return BULAN[m - 1] + ' ' + y; }
-function addMonths(p, n) { let [y, m] = p.split('-').map(Number); m += n; while (m < 1) { m += 12; y--; } while (m > 12) { m -= 12; y++; } return y + '-' + String(m).padStart(2, '0'); }
+function addMonths(p, n) { let [y, m] = p.split('-').map(Number); m += n; while (m < 1) { m += 12; y -= 1; } while (m > 12) { m -= 12; y++; } return y + '-' + String(m).padStart(2, '0'); }
 function age(a) {
   if (!a.tgl_lahir) return '';
   const end = a.tgl_wafat || todayStr();
   const [y1, m1, d1] = a.tgl_lahir.split('-').map(Number), [y2, m2, d2] = end.split('-').map(Number);
-  let y = y2 - y1; if (m2 < m1 || (m2 === m1 && d2 < d1)) y--;
+  let y = y2 - y1; if (m2 < m1 || (m2 === m1 && d2 < d1)) y -= 1;
   return y >= 0 ? y : '';
 }
 function initials(n) { const w = String(n || '?').replace(/^(h\.|hj\.|dr\.|ir\.)\s*/i, '').replace(/\(.*?\)/g, '').split(/\s+/).map(x => x.replace(/[^A-Za-zÀ-ÿ]/g, '')).filter(Boolean); return (w.slice(0, 2).map(x => x[0]).join('') || '?').toUpperCase(); }
@@ -115,7 +116,7 @@ function index() {
     if (guard > 60) return 1;
     const a = byId[id]; let v = 1;
     const parents = [a.ayah_id, a.ibu_id].filter(p => byId[p]);
-    if (parents.length) v = Math.max(...parents.map(p => g(p, guard + 1))) + 1;
+    if (parents.length) v = Math.max.apply(null, parents.map(p => g(p, guard + 1))) + 1;
     else if (parseGen(a.generasi)) v = parseGen(a.generasi);
     else { const sp = spouseIds(a).find(s => byId[s] && (byId[s].ayah_id || byId[s].ibu_id || parseGen(byId[s].generasi))); if (sp) v = g(sp, guard + 1); }
     return (gen[id] = v);
@@ -126,7 +127,7 @@ function index() {
 }
 function invalidate() { IX = null; }
 function nameOf(id) { const a = index().byId[id]; return a ? a.nama : ''; }
-function descendants(id) { const ix = index(), seen = new Set(), st = [...(ix.kids[id] || [])]; while (st.length) { const x = st.pop(); if (seen.has(x)) continue; seen.add(x); st.push(...(ix.kids[x] || [])); } return seen; }
+function descendants(id) { const ix = index(), seen = new Set(), st = (ix.kids[id] || []).slice(); while (st.length) { const x = st.pop(); if (seen.has(x)) continue; seen.add(x); Array.prototype.push.apply(st, ix.kids[x] || []); } return seen; }
 function topAncestor(id) {
   const ix = index(); let cur = id, guard = 0;
   while (guard++ < 60) {
@@ -154,7 +155,7 @@ function rootCandidates() {
     // pasangan yang punya orang tua di database = menantu, bukan akar
     if (sp.some(s => ix.byId[s].ayah_id || ix.byId[s].ibu_id)) return;
     sp.forEach(s => seen.add(s)); seen.add(a.id);
-    const group = [a, ...sp.map(s => ix.byId[s])];
+    const group = [a].concat(sp.map(s => ix.byId[s]));
     const lead = group.find(x => x.jenis_kelamin === 'L' && (ix.kids[x.id] || []).length) || group[0];
     out.push({ id: lead.id, count: descendants(lead.id).size });
   });
@@ -295,7 +296,7 @@ VIEWS.home = function () {
   const tileHtml = (x, i) => `<button class="tile ${i === 0 ? 'dark' : ''}" ${x[0][0] === '@' ? `data-action="${x[0].slice(1)}"` : `data-nav="${x[0]}"`}>${x[3]}${ICON[x[1]]}<span>${x[2]}</span></button>`;
   const latest = isMember() ? beritaSorted('Terbit').slice(0, 3) : [];
   const ratio = (masukBln + keluarBln) ? Math.round(masukBln / (masukBln + keluarBln) * 100) : 0;
-  const recent = [...S.data.kas].sort((a, b) => (b.tanggal + b.created_at).localeCompare(a.tanggal + a.created_at)).slice(0, 4);
+  const recent = S.data.kas.slice().sort((a, b) => (b.tanggal + b.created_at).localeCompare(a.tanggal + a.created_at)).slice(0, 4);
   const nextAg = upcomingAgenda(60)[0];
   const hero = iu.list.length ? `
       <div class="ring" style="--p:${iu.pct}"><b>${iu.pct}%</b></div>
@@ -380,7 +381,7 @@ VIEWS.anggota = function () {
   if (/^g\d+$/.test(f.f)) list = list.filter(a => ix.gen[a.id] === Number(f.f.slice(1)));
   if (f.f !== 'ultah') list.sort((a, b) => ix.gen[a.id] - ix.gen[b.id] || String(a.tgl_lahir || '9999').localeCompare(String(b.tgl_lahir || '9999')) || a.nama.localeCompare(b.nama));
   const count = {}; S.data.anggota.forEach(a => { count[ix.gen[a.id]] = (count[ix.gen[a.id]] || 0) + 1; });
-  const maxG = Math.max(MAX_GEN, ...Object.keys(count).map(Number));
+  const maxG = Math.max.apply(null, [MAX_GEN].concat(Object.keys(count).map(Number)));
   const genPills = Array.from({ length: maxG }, (_, i) => i + 1)
     .map(g => `<button class="pill ${f.f === 'g' + g ? 'active' : ''}" data-action="f-anggota" data-v="g${g}" title="${esc(genLabel(g))}">Gen ${g} <small style="opacity:.7">${count[g] || 0}</small></button>`).join('');
   const pills = [['semua', 'Semua'], ['L', 'Laki-laki'], ['P', 'Perempuan'], ['iuran', 'Wajib iuran'], ['ultah', 'Ultah bulan ini'], ['wafat', 'Almarhum']];
@@ -420,7 +421,7 @@ function personDetail(id) {
   const ix = index(), a = ix.byId[id]; if (!a) return;
   const rel = (ids, label) => ids.length ? `<h4 style="margin:16px 0 8px;font-size:13px">${label}</h4><div class="rel-list">${ids.map(i => ix.byId[i]).filter(Boolean).map(p => `<button data-action="person" data-id="${esc(p.id)}">${avatar(p)}${esc(p.panggilan || p.nama)}</button>`).join('')}</div>` : '';
   const parents = [a.ayah_id, a.ibu_id].filter(p => ix.byId[p]);
-  const siblings = parents.length ? [...new Set(parents.flatMap(p => ix.kids[p] || []))].filter(x => x !== id) : [];
+  const siblings = parents.length ? Array.from(new Set(parents.flatMap(p => ix.kids[p] || []))).filter(x => x !== id) : [];
   const kids = ix.kids[id] || [];
   const cucu = kids.flatMap(k => ix.kids[k] || []);
   const desc = descendants(id).size;
@@ -499,7 +500,7 @@ function formAnggota(a, preset) {
     // generasi: otomatis dari orang tua; manual hanya bila orang tua tidak tercatat
     const genSel = $('#fa-gen', body), genHint = $('#fa-gen-hint', body), ayahSel = $('#fa-ayah', body), ibuSel = $('#fa-ibu', body);
     const syncGen = () => {
-      const pg = Math.max(...[ayahSel, ibuSel].map(s => Number((s.selectedOptions[0] || {}).dataset ? s.selectedOptions[0].dataset.gen || 0 : 0)));
+      const pg = Math.max.apply(null, [ayahSel, ibuSel].map(s => Number((s.selectedOptions[0] || {}).dataset ? s.selectedOptions[0].dataset.gen || 0 : 0)));
       if (pg) {
         const g = pg + 1; genSel.value = String(Math.min(g, MAX_GEN)); genSel.disabled = true;
         genHint.textContent = 'Otomatis dari orang tua: ' + genText(g) + '.';
@@ -530,10 +531,10 @@ VIEWS.pohon = function () {
   if (!S.data.anggota.length) return subhead('Pohon Keluarga') + '<div class="empty"><b>Belum ada anggota</b>Tambahkan anggota dan isi ayah/ibu untuk membentuk pohon.</div>';
   const ix = index(), cands = rootCandidates(), T = S.tree;
   if (!T.rootId || !ix.byId[T.rootId]) T.rootId = cands.length ? cands[0].id : S.data.anggota[0].id;
-  const rootOpts = [...new Map([...cands.map(c => [c.id, c]), [T.rootId, { id: T.rootId, count: descendants(T.rootId).size }]]).values()];
+  const rootOpts = Array.from(new Map(cands.map(c => [c.id, c]).concat([[T.rootId, { id: T.rootId, count: descendants(T.rootId).size }]])).values());
   const tree = buildTree(T.rootId);
   const st = { n: 0, alive: 0, dead: 0, maxDepth: 0 };
-  const walk = (n, d) => { if (n.ref) return; [n.id, ...(T.showSpouse ? n.spouses : [])].forEach(i => { st.n++; alive(ix.byId[i]) ? st.alive++ : st.dead++; }); st.maxDepth = Math.max(st.maxDepth, d); n.children.forEach(c => walk(c, d + 1)); };
+  const walk = (n, d) => { if (n.ref) return; [n.id].concat(T.showSpouse ? n.spouses : []).forEach(i => { st.n++; alive(ix.byId[i]) ? st.alive++ : st.dead++; }); st.maxDepth = Math.max(st.maxDepth, d); n.children.forEach(c => walk(c, d + 1)); };
   walk(tree, 1);
   return subhead('Pohon Keluarga', {
     action: `<button class="icon-btn" data-action="tree-help" aria-label="Bantuan">?</button>`,
@@ -631,7 +632,7 @@ VIEWS.pohon.after = function () {
   st.addEventListener('pointermove', e => {
     if (!pts.has(e.pointerId)) return; pts.set(e.pointerId, e);
     if (pts.size === 2) {
-      const [a, b] = [...pts.values()]; const d = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+      const pv = Array.from(pts.values()), a = pv[0], b = pv[1]; const d = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
       if (pinch) zoomAt((a.clientX + b.clientX) / 2, (a.clientY + b.clientY) / 2, d / pinch);
       pinch = d; moved = true; return;
     }
@@ -657,7 +658,7 @@ function zoomAt(cx, cy, f) {
 /* ===================== KAS ===================== */
 VIEWS.kas = function () {
   const f = S.kas;
-  const months = [...new Set(S.data.kas.map(k => ym(k.tanggal)))].sort().reverse();
+  const months = Array.from(new Set(S.data.kas.map(k => ym(k.tanggal)))).sort().reverse();
   if (f.bulan === '' && months.length) f.bulan = months.includes(ym(todayStr())) ? ym(todayStr()) : months[0];
   const list = S.data.kas.filter(k => (!f.jenis || k.jenis === f.jenis) && (f.bulan === 'semua' || ym(k.tanggal) === f.bulan))
     .sort((a, b) => (b.tanggal + b.created_at).localeCompare(a.tanggal + a.created_at));
@@ -693,7 +694,7 @@ function formKas(k, preset) {
   k = Object.assign({ jenis: 'Masuk', tanggal: todayStr(), metode: 'Tunai' }, preset || {}, k || {});
   const katOpts = j => S.data.kategori.filter(c => c.jenis === j).map(c => `<option ${c.nama === k.kategori ? 'selected' : ''}>${esc(c.nama)}</option>`).join('');
   const iu = iuranStatus(k.periode || ym(k.tanggal));
-  const memberOpts = '<option value="">— Tidak terkait anggota —</option>' + [...iu.belum, ...S.data.anggota.filter(a => !iu.belum.includes(a))]
+  const memberOpts = '<option value="">— Tidak terkait anggota —</option>' + iu.belum.concat(S.data.anggota.filter(a => !iu.belum.includes(a)))
     .map(a => `<option value="${esc(a.id)}" ${a.id === k.anggota_id ? 'selected' : ''}>${esc(a.nama)}${iu.belum.includes(a) ? ' • belum iuran' : ''}</option>`).join('');
   openSheet(k.id ? 'Edit Transaksi' : 'Catat Transaksi', `
   <form id="f-kas" novalidate><input type="hidden" name="id" value="${esc(k.id || '')}"><input type="hidden" name="jenis" value="${esc(k.jenis)}">
@@ -752,7 +753,7 @@ VIEWS.laporan = function () {
        <div class="row2"><div class="field"><label for="lap-from">Dari</label><input class="input" type="date" id="lap-from" value="${esc(L.from)}"></div>
          <div class="field"><label for="lap-to">Sampai</label><input class="input" type="date" id="lap-to" value="${esc(L.to)}"></div></div>
        ${L.tab === 'arus' ? `<div class="row2"><div class="field"><label for="lap-jenis">Jenis</label><select class="input" id="lap-jenis"><option value="">Semua</option><option ${L.jenis === 'Masuk' ? 'selected' : ''}>Masuk</option><option ${L.jenis === 'Keluar' ? 'selected' : ''}>Keluar</option></select></div>
-         <div class="field"><label for="lap-kat">Kategori</label><select class="input" id="lap-kat"><option value="">Semua</option>${[...new Set(S.data.kategori.filter(k => !L.jenis || k.jenis === L.jenis).map(k => k.nama))].map(n => `<option ${L.kategori === n ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select></div></div>` : ''}`;
+         <div class="field"><label for="lap-kat">Kategori</label><select class="input" id="lap-kat"><option value="">Semua</option>${Array.from(new Set(S.data.kategori.filter(k => !L.jenis || k.jenis === L.jenis).map(k => k.nama))).map(n => `<option ${L.kategori === n ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select></div></div>` : ''}`;
   return subhead('Laporan Keuangan') + `<div class="page">
     <div class="seg no-print" style="margin-bottom:12px">${tabs.map(t => `<button class="${L.tab === t[0] ? 'active' : ''}" data-action="lap-tab" data-v="${t[0]}">${t[1]}</button>`).join('')}</div>
     <div class="card no-print" style="margin-bottom:12px">${filters}
@@ -769,7 +770,7 @@ VIEWS.laporan.after = function () {
 };
 function yearOptions(sel) {
   const ys = new Set(S.data.kas.map(k => Number(k.tanggal.slice(0, 4))).filter(Boolean)); ys.add(Number(todayStr().slice(0, 4)));
-  return [...ys].sort((a, b) => b - a).map(y => `<option ${y === sel ? 'selected' : ''}>${y}</option>`).join('');
+  return Array.from(ys).sort((a, b) => b - a).map(y => `<option ${y === sel ? 'selected' : ''}>${y}</option>`).join('');
 }
 function lapRows() {
   const L = S.lap;
@@ -841,10 +842,10 @@ function exportLaporan() {
   const L = S.lap;
   if (L.tab === 'iuran') {
     const kat = S.data.settings.kategori_iuran || 'Iuran Bulanan';
-    const rows = [['Anggota', ...BULAN, 'Total']];
+    const rows = [['Anggota'].concat(BULAN, ['Total'])];
     S.data.anggota.filter(wajib).forEach(a => {
       let t = 0; const cells = BULAN.map((_, i) => { const v = S.data.kas.filter(k => k.anggota_id === a.id && k.kategori === kat && k.periode === L.year + '-' + String(i + 1).padStart(2, '0')).reduce((s, k) => s + k.jumlah, 0); t += v; return v; });
-      rows.push([a.nama, ...cells, t]);
+      rows.push([a.nama].concat(cells, [t]));
     });
     return downloadCsv(`rekap-iuran-${L.year}.csv`, rows);
   }
@@ -903,7 +904,7 @@ VIEWS.dashboard.after = () => { const s = $('#dash-year'); if (s) s.onchange = (
 
 function niceMax(v) { if (v <= 0) return 1; const p = Math.pow(10, Math.floor(Math.log10(v))); return Math.ceil(v / p * 1.1) * p; }
 function barChart(a, b) {
-  const W = 340, H = 190, L = 36, B = 22, T = 8, max = niceMax(Math.max(...a, ...b)), cw = (W - L) / 12, bw = Math.min(9, cw / 2 - 2);
+  const W = 340, H = 190, L = 36, B = 22, T = 8, max = niceMax(Math.max.apply(null, a.concat(b))), cw = (W - L) / 12, bw = Math.min(9, cw / 2 - 2);
   const yy = v => T + (H - T - B) * (1 - v / max);
   let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Grafik arus kas bulanan">`;
   for (let i = 0; i <= 4; i++) { const v = max * i / 4, Y = yy(v); s += `<line x1="${L}" x2="${W}" y1="${Y}" y2="${Y}" stroke="#eef2f7"/><text x="${L - 4}" y="${Y + 3}" text-anchor="end">${rpShort(v)}</text>`; }
@@ -917,7 +918,7 @@ function barChart(a, b) {
 }
 function lineChart(vals, n) {
   if (!n) return '<p class="empty" style="padding:8px">Belum ada data.</p>';
-  const W = 340, H = 150, L = 36, B = 22, T = 10, mn = Math.min(0, ...vals), mx = niceMax(Math.max(...vals, 1)), cw = (W - L) / 12;
+  const W = 340, H = 150, L = 36, B = 22, T = 10, mn = Math.min.apply(null, [0].concat(vals)), mx = niceMax(Math.max.apply(null, vals.concat([1]))), cw = (W - L) / 12;
   const yy = v => T + (H - T - B) * (1 - (v - mn) / (mx - mn || 1));
   const pts = vals.map((v, i) => [L + i * cw + cw / 2, yy(v)]);
   let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Grafik saldo"><defs><linearGradient id="lg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2f6fed" stop-opacity=".35"/><stop offset="1" stop-color="#2f6fed" stop-opacity="0"/></linearGradient></defs>`;
@@ -1002,7 +1003,7 @@ function formAgenda(a) {
 
 /* ===================== GALERI ===================== */
 VIEWS.galeri = function () {
-  const albums = [...new Set(S.data.galeri.map(g => g.album || 'Umum'))].sort();
+  const albums = Array.from(new Set(S.data.galeri.map(g => g.album || 'Umum'))).sort();
   const al = S.galeri.album;
   const list = S.data.galeri.filter(g => !al || (g.album || 'Umum') === al).sort((a, b) => String(b.tanggal).localeCompare(String(a.tanggal)));
   return subhead('Galeri Keluarga', { action: addBtn('add-foto', 'Unggah foto') }) + `<div class="page">
@@ -1028,7 +1029,7 @@ function lightbox(id) {
   show(); lb.hidden = false;
 }
 function formFoto() {
-  const albums = [...new Set(S.data.galeri.map(g => g.album).filter(Boolean))];
+  const albums = Array.from(new Set(S.data.galeri.map(g => g.album).filter(Boolean)));
   openSheet('Unggah Foto', `<form id="f-foto" novalidate><input type="hidden" name="foto_url"><input type="hidden" name="file_id">
     <label class="card" style="display:grid;place-items:center;min-height:150px;cursor:pointer;border:2px dashed #c7d6ef;box-shadow:none" id="drop"><span style="color:var(--muted);font-size:14px">📷 Pilih foto (maks. 5 MB)</span><input type="file" accept="image/*" id="ff-file" hidden></label>
     <p style="text-align:center;font-size:12px;color:var(--muted)">atau tempel URL gambar:</p>

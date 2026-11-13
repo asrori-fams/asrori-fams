@@ -30,6 +30,7 @@
       } catch (x) {}
       show('Terjadi kesalahan JavaScript', (e.message || 'tidak diketahui') + (e.lineno ? ' (baris ' + e.lineno + ')' : '') +
         (code ? '<br><code style="display:block;text-align:left;font-size:11px;background:#fff;border-radius:8px;padding:8px;margin:8px 0;word-break:break-all">' + code + '</code>' : '') +
+        (/\u2026/.test(code) ? '<small><b>Terdeteksi tanda elipsis (\u2026) di dalam kode: file terkena koreksi otomatis.</b><br></small>' : '') +
         '<small>Kode di file Apps Script berbeda dari file rilis (biasanya berubah saat disalin-tempel). Di spreadsheet jalankan <b>Asrori Fam\'s &gt; 5. Cek instalasi</b> untuk melihat file mana, tempel ulang file itu, lalu buat Versi baru.</small>');
     });
     setTimeout(function () {

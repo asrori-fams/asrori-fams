@@ -126,11 +126,11 @@ function nameLink(id) { const a = index().byId[id]; return a ? `<button class="l
 /* ===================== RINGKASAN ===================== */
 VIEWS.ringkasan = function () {
   const ix = index(), t = todayStr(), p = ym(t), iu = iuranStatus(p), st = S.data.settings;
-  const hidup = S.data.anggota.filter(alive).length, maxGen = Math.max(1, ...Object.values(ix.gen));
+  const hidup = S.data.anggota.filter(alive).length, maxGen = Math.max.apply(null, [1].concat(Object.values(ix.gen)));
   const masuk = sumKas(k => k.jenis === 'Masuk' && ym(k.tanggal) === p), keluar = sumKas(k => k.jenis === 'Keluar' && ym(k.tanggal) === p);
   const pend = beritaSorted('Menunggu'), ag = upcomingAgenda(30), bd = birthdaysThisMonth();
   const genCount = {}; S.data.anggota.forEach(a => { genCount[ix.gen[a.id]] = (genCount[ix.gen[a.id]] || 0) + 1; });
-  const gMax = Math.max(1, ...Object.values(genCount));
+  const gMax = Math.max.apply(null, [1].concat(Object.values(genCount)));
   const GC = ['#1e3a6e', '#2f6fed', '#0ea5e9', '#14b8a6', '#22c55e', '#f59e0b', '#64748b'];
   const y = Number(t.slice(0, 4)), mIn = Array(12).fill(0), mOut = Array(12).fill(0);
   S.data.kas.filter(k => k.tanggal.slice(0, 4) == y).forEach(k => { (k.jenis === 'Masuk' ? mIn : mOut)[Number(k.tanggal.slice(5, 7)) - 1] += k.jumlah; });
@@ -194,7 +194,7 @@ VIEWS['adm-anggota'] = function () {
   if (sf === 'hidup') rows = rows.filter(alive); if (sf === 'wafat') rows = rows.filter(a => !alive(a));
   if (sf === 'iuran') rows = rows.filter(wajib); if (sf === 'L' || sf === 'P') rows = rows.filter(a => a.jenis_kelamin === sf);
   if (sf === 'lengkapi') rows = rows.filter(a => !a.tgl_lahir || (ix.gen[a.id] > 1 && !a.ayah_id && !a.ibu_id && !spouseIds(a).length));
-  const maxG = Math.max(MAX_GEN, ...Object.values(ix.gen));
+  const maxG = Math.max.apply(null, [MAX_GEN].concat(Object.values(ix.gen)));
   const cols = [
     { k: 'nama', label: 'Nama', r: a => personCell(a.id) },
     { k: 'jenis_kelamin', label: 'JK', r: a => a.jenis_kelamin === 'P' ? 'P' : 'L' },
@@ -208,7 +208,7 @@ VIEWS['adm-anggota'] = function () {
     { label: '', r: a => `<div class="row-actions"><button class="mini" data-action="edit-anggota" data-id="${esc(a.id)}">Edit</button>${ix.gen[a.id] < MAX_GEN ? `<button class="mini" data-action="add-child" data-id="${esc(a.id)}">+ Anak</button>` : ''}<button class="mini" data-action="tree-focus" data-id="${esc(a.id)}" title="Lihat di pohon">🌳</button></div>` }
   ];
   if (!S.adm.tables['t-anggota']) S.adm.tables['t-anggota'] = { sort: 'gen', dir: 1, page: 0, size: 25 };
-  return admHead('Data Anggota', `${S.data.anggota.length} anggota · ${S.data.anggota.filter(alive).length} hidup · ${Math.max(1, ...Object.values(ix.gen))} generasi`,
+  return admHead('Data Anggota', `${S.data.anggota.length} anggota · ${S.data.anggota.filter(alive).length} hidup · ${Math.max.apply(null, [1].concat(Object.values(ix.gen)))} generasi`,
     `<button class="btn ghost sm" data-action="adm-csv-anggota">⬇ Ekspor CSV</button><button class="btn primary sm" data-action="add-anggota">＋ Tambah anggota</button>`) + `
   <section class="adm-card">
     <div class="adm-toolbar">${admSearch('aq', 'Cari nama, pekerjaan, alamat, nomor…')}
@@ -228,7 +228,7 @@ function admKasRows() {
     && (!q || [k.keterangan, k.kategori, nameOf(k.anggota_id), k.metode, String(k.jumlah)].join(' ').toLowerCase().includes(q)));
 }
 VIEWS['adm-kas'] = function () {
-  const months = [...new Set(S.data.kas.map(k => ym(k.tanggal)))].sort().reverse();
+  const months = Array.from(new Set(S.data.kas.map(k => ym(k.tanggal)))).sort().reverse();
   const rows = admKasRows();
   const tin = rows.filter(k => k.jenis === 'Masuk').reduce((t, k) => t + k.jumlah, 0), tout = rows.filter(k => k.jenis === 'Keluar').reduce((t, k) => t + k.jumlah, 0);
   const cols = [
@@ -255,7 +255,7 @@ VIEWS['adm-kas'] = function () {
     <div class="adm-toolbar">${admSearch('kq', 'Cari keterangan, anggota, nominal…')}
       <select class="input" id="k-bulan" aria-label="Bulan"><option value="">Semua bulan</option>${months.map(m => `<option value="${m}" ${m === S.adm.kbulan ? 'selected' : ''}>${fmtMonth(m)}</option>`).join('')}</select>
       <select class="input" id="k-jenis" aria-label="Jenis"><option value="">Masuk & keluar</option><option ${S.adm.kjenis === 'Masuk' ? 'selected' : ''}>Masuk</option><option ${S.adm.kjenis === 'Keluar' ? 'selected' : ''}>Keluar</option></select>
-      <select class="input" id="k-kat" aria-label="Kategori"><option value="">Semua kategori</option>${[...new Set(S.data.kategori.map(k => k.nama))].map(n => `<option ${n === S.adm.kkat ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select>
+      <select class="input" id="k-kat" aria-label="Kategori"><option value="">Semua kategori</option>${Array.from(new Set(S.data.kategori.map(k => k.nama))).map(n => `<option ${n === S.adm.kkat ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select>
     </div>
     ${dataTable('t-kas', cols, rows, { foot })}
   </section>`;
@@ -273,7 +273,7 @@ VIEWS['adm-berita'] = function () {
   const q = (S.adm.q['bq'] || '').toLowerCase();
   const rows = S.data.berita.filter(b => (!S.adm.bstat || b.status === S.adm.bstat) && (!q || [b.judul, b.isi, b.kategori, nameOf(b.penulis_id)].join(' ').toLowerCase().includes(q)));
   const cnt = s => S.data.berita.filter(b => b.status === s).length;
-  const sel = S.adm.sel; [...sel].forEach(id => { if (!rows.some(b => b.id === id)) sel.delete(id); });
+  const sel = S.adm.sel; Array.from(sel).forEach(id => { if (!rows.some(b => b.id === id)) sel.delete(id); });
   const cols = [
     { label: `<input type="checkbox" data-selall aria-label="Pilih semua" ${rows.length && rows.every(b => sel.has(b.id)) ? 'checked' : ''}>`, r: b => `<input type="checkbox" data-sel="${esc(b.id)}" aria-label="Pilih" ${sel.has(b.id) ? 'checked' : ''}>` },
     { k: 'judul', label: 'Berita', r: b => `<button class="link" style="text-decoration:none;font-weight:700;font-size:13.5px;text-align:left" data-action="berita-detail" data-id="${esc(b.id)}">${b.disematkan ? '📌 ' : ''}${esc(b.judul)}</button><div class="muted clip" style="max-width:360px">${esc(b.isi)}</div>` },
@@ -307,7 +307,7 @@ VIEWS['adm-log'] = function () {
   const logs = S.adm.log;
   if (logs === null) return admHead('Log Aktivitas', 'Memuat…') + '<div class="adm-card"><div class="skeleton" style="height:300px"></div></div>';
   const q = (S.adm.q['lq'] || '').toLowerCase();
-  const ents = [...new Set(logs.map(l => l.entitas).filter(Boolean))].sort();
+  const ents = Array.from(new Set(logs.map(l => l.entitas).filter(Boolean))).sort();
   const rows = logs.filter(l => (!S.adm.lent || l.entitas === S.adm.lent) && (!q || [l.aksi, l.entitas, l.entitas_id, l.ringkasan, l.peran].join(' ').toLowerCase().includes(q)));
   const cols = [
     { k: 'waktu', label: 'Waktu', r: l => `<span style="white-space:nowrap">${esc(String(l.waktu).replace('T', ' '))}</span> <span class="muted">${esc(timeAgo(l.waktu))}</span>` },
@@ -357,7 +357,7 @@ Object.assign(ACT, {
   'adm-bstat': el => { S.adm.bstat = el.dataset.v; S.adm.bTouched = true; S.adm.sel.clear(); if (S.adm.tables['t-berita']) S.adm.tables['t-berita'].page = 0; render(); },
   'adm-bulk-clear': () => { S.adm.sel.clear(); render(); },
   'adm-bulk': async el => {
-    const ids = [...S.adm.sel], v = el.dataset.v; if (!ids.length) return;
+    const ids = Array.from(S.adm.sel), v = el.dataset.v; if (!ids.length) return;
     if (v === 'tolak' && !(await confirmSheet('Tolak ' + ids.length + ' berita?', 'Berita yang ditolak tidak tampil untuk keluarga. Bisa diterbitkan kembali kapan saja dari tab Ditolak.', 'Tolak'))) return;
     let ok = 0;
     for (const id of ids) {
