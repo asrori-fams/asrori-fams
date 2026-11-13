@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <!-- =====================================================================
+       Asrori Fam's — pembungkus aplikasi (PWA) untuk dipasang di layar HP.
+       SATU-SATUNYA yang perlu diubah: APP_URL di bawah, isi dengan URL
+       web app Apps Script yang berakhiran /exec.
+       ===================================================================== -->
+  <script>
+    const APP_URL = 'TEMPEL_URL_EXEC_DI_SINI';
+  </script>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Asrori Fam's</title>
+  <meta name="description" content="Aplikasi Keluarga Besar Asrori">
+  <meta name="theme-color" content="#1e3a6e">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" type="image/png" href="icons/favicon-64.png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Asrori Fam's">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <style>
+    html, body { margin: 0; height: 100%; background: #1e3a6e; overflow: hidden; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+    iframe { position: fixed; inset: 0; width: 100%; height: 100%; border: 0; background: #eef3fb; }
+    .splash { position: fixed; inset: 0; z-index: 2; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; color: #fff;
+      background: linear-gradient(160deg, #284a86, #1e3a6e 55%, #3a78d8); transition: opacity .4s; padding: 24px; text-align: center; }
+    .splash img { width: 108px; height: 108px; border-radius: 28px; box-shadow: 0 16px 40px -12px rgba(0,0,0,.5); animation: p 1.6s ease-in-out infinite; }
+    .splash h1 { margin: 0; font-size: 22px; }
+    .splash p { margin: 0; opacity: .85; font-size: 14px; max-width: 320px; line-height: 1.5; }
+    .splash button { border: 0; background: #fff; color: #1e3a6e; font-weight: 700; font-size: 15px; padding: 12px 22px; border-radius: 14px; }
+    .hide { opacity: 0; pointer-events: none; }
+    @keyframes p { 50% { transform: scale(.94); } }
+  </style>
+</head>
+<body>
+  <div class="splash" id="splash">
+    <img src="icons/icon-192.png" alt="">
+    <h1>Asrori Fam's</h1>
+    <p id="msg">Memuat aplikasi keluarga…</p>
+    <button id="retry" hidden>Coba lagi</button>
+  </div>
+  <script>
+    const splash = document.getElementById('splash'), msg = document.getElementById('msg'), retry = document.getElementById('retry');
+    function fail(text) { msg.textContent = text; retry.hidden = false; splash.classList.remove('hide'); }
+    function start() {
+      retry.hidden = true; msg.textContent = 'Memuat aplikasi keluarga…';
+      if (!/^https:\/\/script\.google\.com\/.+\/exec/.test(APP_URL)) {
+        msg.textContent = 'APP_URL belum diisi. Buka index.html, tempel URL web app Apps Script yang berakhiran /exec.';
+        return;
+      }
+      if (!navigator.onLine) { fail('Tidak ada koneksi internet. Aplikasi ini butuh internet untuk mengambil data.'); return; }
+      const old = document.querySelector('iframe'); if (old) old.remove();
+      const f = document.createElement('iframe');
+      f.src = APP_URL;
+      f.title = "Asrori Fam's";
+      f.allow = 'geolocation; clipboard-write; fullscreen';
+      let done = false;
+      f.onload = () => { done = true; setTimeout(() => splash.classList.add('hide'), 600); };
+      setTimeout(() => { if (!done) fail('Server lambat merespons. Periksa koneksi lalu coba lagi.'); }, 25000);
+      document.body.appendChild(f);
+    }
+    retry.onclick = start;
+    window.addEventListener('online', () => { if (!retry.hidden) start(); });
+    start();
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+  </script>
+</body>
+</html>
