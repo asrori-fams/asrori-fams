@@ -19,7 +19,7 @@ const ADM_NAV = [
   ['Keluarga', [['adm-anggota', 'keluarga', 'Data Anggota'], ['pohon', 'pohon', 'Pohon Keluarga'], ['adm-berita', 'berita', 'Kabar & Moderasi'],
     ['agenda', 'agenda', 'Agenda'], ['galeri', 'galeri', 'Galeri'], ['peta', 'peta', 'Peta Keluarga']]],
   ['Keuangan', [['adm-kas', 'kas', 'Transaksi Kas'], ['@iuran', 'iuran', 'Rekap Iuran'], ['laporan', 'laporan', 'Laporan Keuangan'], ['dashboard', 'chart', 'Dashboard Keuangan']]],
-  ['Sistem', [['akun', 'akun', 'Pengaturan'], ['adm-log', 'log', 'Log Aktivitas']]]
+  ['Sistem', [['adm-perangkat', 'keluarga', 'Perangkat & Pengguna'], ['akun', 'akun', 'Pengaturan'], ['adm-log', 'log', 'Log Aktivitas']]]
 ];
 const ADM_ALIAS = { home: 'ringkasan', anggota: 'adm-anggota', kas: 'adm-kas', berita: 'adm-berita' };
 
@@ -35,6 +35,7 @@ function navBadge(key) {
   if (key === '@iuran') { const n = iuranStatus(ym(todayStr())).belum.length; return n ? `<i class="cnt">${n}</i>` : ''; }
   if (key === 'agenda') { const n = upcomingAgenda(30).length; return n ? `<i class="cnt blue">${n}</i>` : ''; }
   if (key === 'adm-anggota') return `<i class="cnt blue">${S.data.anggota.length}</i>`;
+  if (key === 'adm-perangkat') { const n = activeCount(1); return n ? `<i class="cnt" style="background:var(--green)">${n}</i>` : ''; }
   return '';
 }
 function renderSide() {
@@ -56,7 +57,7 @@ function renderTop() {
     <span class="sp"></span>
     ${admin ? `<button class="tb" data-action="notif" aria-label="Pengingat">🔔<span class="lbl">Pengingat</span>${notif ? '<span class="dot"></span>' : ''}</button>
       <button class="tb primary" data-action="quick-add">＋ <span class="lbl">Tambah</span></button>
-      <div class="adm-who"><span class="avatar">AD</span><div><b>Admin</b><small>Sesi 6 jam</small></div><button class="tb" data-action="logout" title="Keluar">⎋</button></div>` : ''}`;
+      <div class="adm-who">${me() ? avatar(me()) : '<span class="avatar">AD</span>'}<div><b>${esc(me() ? meName() : 'Admin')}</b><small>Admin · sesi 6 jam</small></div><button class="tb" data-action="logout" title="Keluar">⎋</button></div>` : ''}`;
   const q = $('#adm-gq');
   if (q) q.addEventListener('keydown', e => { if (e.key === 'Enter' && q.value.trim()) { S.cari.q = q.value.trim(); go('cari'); } });
 }
@@ -148,6 +149,7 @@ VIEWS.ringkasan = function () {
     <button class="akpi" data-action="adm-nav" data-k="@iuran">${ICON.iuran}<div><small>Iuran bulan ini</small><b>${iu.pct}%</b><em>${iu.lunas.length} dari ${iu.list.length} lunas</em></div></button>
     <button class="akpi" data-action="adm-nav" data-k="adm-anggota">${ICON.keluarga}<div><small>Anggota</small><b>${S.data.anggota.length}</b><em>${hidup} hidup · ${maxGen} generasi</em></div></button>
     <button class="akpi" data-action="adm-nav" data-k="adm-berita">${ICON.berita}<div><small>Kabar keluarga</small><b>${beritaSorted('Terbit').length}</b><em>${pend.length ? `<span style="color:#b45309">${pend.length} menunggu</span>` : 'tidak ada antrean'}</em></div></button>
+    <button class="akpi" data-action="adm-nav" data-k="adm-perangkat">${ICON.keluarga}<div><small>Aktif 24 jam</small><b>${activeCount(1)} orang</b><em>${(S.data.perangkat || []).length} perangkat dikenali</em></div></button>
     <button class="akpi" data-action="adm-nav" data-k="agenda">${ICON.agenda}<div><small>Agenda 30 hari</small><b>${ag.length}</b><em>${ag[0] ? esc(fmtDate(ag[0].tanggal)) + ' · ' + esc(ag[0].judul) : 'belum ada'}</em></div></button>
   </div>
   <div class="two-col">
@@ -178,7 +180,7 @@ VIEWS.ringkasan.after = () => { if (S.adm.log === null) loadLog(); };
 function logChip(a) { a = String(a); return /DELETE|TOLAK/.test(a) ? 'red' : /CREATE|TERBIT|LOGIN/.test(a) ? 'green' : /UPDATE|SEMAT|LEPAS/.test(a) ? 'amber' : 'gray'; }
 async function loadLog() {
   if (S.adm.logLoading) return; S.adm.logLoading = true;
-  try { S.adm.log = await api('apiGetLog', S.token, 500); } catch (e) { S.adm.log = []; toast(e.message, 'error'); handleAuthErr(e); }
+  try { S.adm.log = await api('apiGetLog', AUTH(), 500); } catch (e) { S.adm.log = []; toast(e.message, 'error'); handleAuthErr(e); }
   S.adm.logLoading = false;
   if (S.view === 'ringkasan' || S.view === 'adm-log') render();
 }
@@ -300,6 +302,38 @@ VIEWS['adm-berita'].after = () => {
   const all = $('[data-selall]'); if (all) all.onchange = () => { $$('[data-sel]').forEach(c => all.checked ? S.adm.sel.add(c.dataset.sel) : S.adm.sel.delete(c.dataset.sel)); render(); };
 };
 
+/* ===================== PERANGKAT & PENGGUNA ===================== */
+function activeCount(days) {
+  const since = Date.now() - days * 864e5;
+  return (S.data.aktif || []).filter(x => new Date(String(x.last_seen).replace(' ', 'T')).getTime() >= since).length;
+}
+VIEWS['adm-perangkat'] = function () {
+  const ix = index(), devs = (S.data.perangkat || []).slice();
+  const q = (S.adm.q['dq'] || '').toLowerCase();
+  const rows = devs.filter(d => !q || [nameOf(d.anggota_id), d.label].join(' ').toLowerCase().includes(q));
+  const known = new Set(devs.map(d => d.anggota_id));
+  const alive = S.data.anggota.filter(a => !a.tgl_wafat);
+  const cols = [
+    { k: 'anggota', label: 'Pengguna', v: d => nameOf(d.anggota_id), r: d => personCell(d.anggota_id) },
+    { k: 'gen', label: 'Generasi', v: d => ix.gen[d.anggota_id] || 0, r: d => ix.gen[d.anggota_id] ? `<span class="chip gen-${Math.min(ix.gen[d.anggota_id], 7)}">Gen ${ix.gen[d.anggota_id]}</span>` : '' },
+    { k: 'label', label: 'Perangkat', r: d => esc(d.label || '–') + (d.device_id === deviceId() ? ' <span class="chip">perangkat ini</span>' : '') },
+    { k: 'first_seen', label: 'Pertama dikenali', r: d => `<span class="muted">${esc(fmtDate(String(d.first_seen).slice(0, 10)))}</span>` },
+    { k: 'last_seen', label: 'Terakhir aktif', r: d => { const ago = activeAgo(d.last_seen); return ago === 'online' ? '<span class="chip green">● online</span>' : esc(ago); } },
+    { label: '', r: d => `<div class="row-actions"><button class="mini red" data-action="adm-dev-del" data-id="${esc(d.device_id)}">Lepas</button></div>` }
+  ];
+  if (!S.adm.tables['t-dev']) S.adm.tables['t-dev'] = { sort: 'last_seen', dir: -1, page: 0, size: 25 };
+  return admHead('Perangkat & Pengguna', 'Anggota yang dikenali otomatis lewat perangkatnya (tanpa login). Lepas perangkat yang tidak dikenal atau salah nama.') + `
+  <div class="adm-strip">
+    <div class="akpi dark">${ICON.keluarga}<div><small>Aktif 24 jam</small><b>${activeCount(1)} orang</b><em>${activeCount(7)} orang dalam 7 hari</em></div></div>
+    <div class="akpi">${ICON.akun}<div><small>Perangkat dikenali</small><b>${devs.length}</b><em>${known.size} anggota berbeda</em></div></div>
+    <div class="akpi">${ICON.berita}<div><small>Belum pernah membuka</small><b>${alive.filter(a => !known.has(a.id)).length}</b><em>dari ${alive.length} anggota hidup</em></div></div>
+  </div>
+  <section class="adm-card"><div class="adm-toolbar">${admSearch('dq', 'Cari nama atau jenis perangkat…')}</div>
+    ${dataTable('t-dev', cols, rows)}
+    <p class="muted" style="font-size:12px;margin:12px 0 0">Satu anggota boleh punya beberapa perangkat. Pengenalan ini hanya untuk sapaan dan pencatatan; hak akses tetap mengikuti PIN.</p></section>`;
+};
+VIEWS['adm-perangkat'].after = () => { bindAdmSearch('dq', 't-dev'); bindTableUi(); };
+
 /* ===================== LOG AKTIVITAS ===================== */
 S.adm.lent = '';
 VIEWS['adm-log'] = function () {
@@ -361,11 +395,17 @@ Object.assign(ACT, {
     let ok = 0;
     for (const id of ids) {
       toast(`Memproses ${ok + 1} dari ${ids.length}…`);
-      try { const r = await api('apiModerasiBerita', S.token, id, v); upsert('berita', r); ok++; } catch (e) { toast(e.message, 'error'); handleAuthErr(e); break; }
+      try { const r = await api('apiModerasiBerita', AUTH(), id, v); upsert('berita', r); ok++; } catch (e) { toast(e.message, 'error'); handleAuthErr(e); break; }
     }
     S.adm.sel.clear(); toast(`${ok} berita ${v === 'terbit' ? 'diterbitkan' : 'ditolak'}`, 'ok'); render();
   },
   'adm-csv-anggota': admCsvAnggota,
+  'adm-dev-del': async el => {
+    const d = (S.data.perangkat || []).find(x => x.device_id === el.dataset.id);
+    if (!(await confirmSheet('Lepas perangkat?', `Perangkat ${d ? d.label + ' milik ' + nameOf(d.anggota_id) : ''} tidak lagi dikenali. Pemiliknya akan diminta memilih nama lagi saat membuka aplikasi.`, 'Lepas'))) return;
+    try { await api('apiDeleteDevice', AUTH(), el.dataset.id); S.data.perangkat = S.data.perangkat.filter(x => x.device_id !== el.dataset.id); toast('Perangkat dilepas', 'ok'); render(); }
+    catch (e) { toast(e.message, 'error'); handleAuthErr(e); }
+  },
   'adm-csv-kas': admCsvKas,
   'adm-log-reload': () => { S.adm.log = null; render(); loadLog(); }
 });

@@ -238,7 +238,19 @@ function subhead(title, opts = {}) {
     <button class="icon-btn" data-action="back" aria-label="Kembali">←</button>
     <h1>${esc(title)}</h1>${opts.action || ''}</div>${opts.extra || ''}</header>`;
 }
-function addBtn(action, label) { return isAdmin() ? `<button class="icon-btn" data-action="${action}" aria-label="${esc(label)}" title="${esc(label)}">＋</button>` : ''; }
+/** Menu khusus admin, dan data yang boleh ditambahkan anggota. */
+const ADMIN_ONLY_VIEWS = ['kas', 'laporan', 'akun'];
+const MEMBER_CAN_ADD = ['anggota', 'agenda', 'berita'];
+function canAdd(kind) { return isAdmin() || (isMember() && MEMBER_CAN_ADD.indexOf(kind) >= 0); }
+function requireMemberUI() { if (isMember()) return true; loginSheet('anggota'); return false; }
+function adminGate(title) {
+  return subhead(title) + `<div class="page"><div class="card" style="text-align:center;padding:26px 20px">
+    <div style="font-size:40px">🔒</div><h3 style="margin:8px 0 4px">Khusus Admin</h3>
+    <p style="color:var(--muted);font-size:14px;margin:0 0 16px">Menu ${esc(title)} hanya bisa dibuka oleh pengelola keluarga. Masukkan PIN Admin untuk melanjutkan.</p>
+    <form id="gate-form" data-role="admin" style="text-align:left">${pinField()}<button class="btn primary block">Masuk sebagai Admin</button></form>
+    <button class="btn ghost block" style="margin-top:10px" data-nav="home">Kembali ke Beranda</button></div></div>`;
+}
+function addBtn(action, label, kind) { return (kind ? canAdd(kind) : isAdmin()) ? `<button class="icon-btn" data-action="${action}" aria-label="${esc(label)}" title="${esc(label)}">＋</button>` : ''; }
 
 /* ---------- render utama ---------- */
 const VIEWS = {};
@@ -249,6 +261,12 @@ function render() {
   if (!S.data) return;
   if (S.data.needLogin) { v.innerHTML = viewLogin(); $('.bottom-nav').classList.add('hidden'); return; }
   $('.bottom-nav').classList.remove('hidden');
+  if (ADMIN_ONLY_VIEWS.indexOf(S.view) >= 0 && !isAdmin()) {
+    v.innerHTML = adminGate({ kas: 'Kas Keluarga', laporan: 'Laporan Keuangan', akun: 'Akun & Pengaturan' }[S.view]);
+    bindLogin($('#gate-form'));
+    $$('.nav-btn').forEach(b => b.classList.toggle('active', b.dataset.nav === S.view));
+    return;
+  }
   const fn = VIEWS[S.view] || VIEWS.home;
   v.innerHTML = fn();
   if (fn.after) fn.after();
@@ -276,7 +294,10 @@ VIEWS.home = function () {
   const notif = upcomingAgenda(7).length + birthdaysThisMonth().filter(a => a.tgl_lahir.slice(5) === t.slice(5)).length + nBerita;
   const newPhoto = S.data.galeri.some(g => (g.created_at || g.tanggal || '') >= addDays(t, -14));
   const logo = st.logo_url ? `<img src="${esc(st.logo_url)}" alt="" referrerpolicy="no-referrer">` : 'A';
-  const greet = S.role === 'admin' ? 'Admin' : 'Keluarga';
+  const m = me();
+  const greet = m ? meName(m) : (S.role === 'admin' ? 'Admin' : 'Keluarga');
+  const hhSub = (m ? genLabel(index().gen[m.id]) + ' \u00b7 ' : '') + st.nama_keluarga + (isAdmin() ? ' \u00b7 Admin' : '');
+  const hhAvatar = m ? (m.foto_url ? `<img src="${esc(m.foto_url)}" alt="" referrerpolicy="no-referrer">` : esc(initials(m.nama))) : logo;
   const nb = isMember() ? beritaBaru() : 0, np = beritaPending();
   const tiles = [
     ['anggota', 'keluarga', 'Data<br>Keluarga', `<span class="badge" style="background:#1e3a6e">${S.data.anggota.length}</span>`],
@@ -292,7 +313,8 @@ VIEWS.home = function () {
     ['cari', 'cari', 'Cari', ''],
     ['akun', 'akun', 'Akun &amp;<br>Pengaturan', '']
   ];
-  const tileHtml = (x, i) => `<button class="tile ${i === 0 ? 'dark' : ''}" ${x[0][0] === '@' ? `data-action="${x[0].slice(1)}"` : `data-nav="${x[0]}"`}>${x[3]}${ICON[x[1]]}<span>${x[2]}</span></button>`;
+  const LOCK = '<span class="badge" style="background:#64748b" title="Khusus admin">🔒</span>';
+  const tileHtml = (x, i) => `<button class="tile ${i === 0 ? 'dark' : ''}" ${x[0][0] === '@' ? `data-action="${x[0].slice(1)}"` : `data-nav="${x[0]}"`}>${!isAdmin() && ADMIN_ONLY_VIEWS.indexOf(x[0]) >= 0 ? LOCK : x[3]}${ICON[x[1]]}<span>${x[2]}</span></button>`;
   const latest = isMember() ? beritaSorted('Terbit').slice(0, 3) : [];
   const ratio = (masukBln + keluarBln) ? Math.round(masukBln / (masukBln + keluarBln) * 100) : 0;
   const recent = S.data.kas.slice().sort((a, b) => (b.tanggal + b.created_at).localeCompare(a.tanggal + a.created_at)).slice(0, 4);
@@ -309,15 +331,16 @@ VIEWS.home = function () {
   return `
   <header class="home-head">
     <div class="hh-row">
-      <div class="hh-avatar">${logo}</div>
-      <div class="hh-text"><h1>Halo ${esc(greet)},</h1><p>${esc(st.nama_keluarga)}</p></div>
+      <button class="hh-avatar ${m ? 'me av-' + (m.jenis_kelamin === 'P' ? 'P' : 'L') : ''}" data-action="me" aria-label="${m ? 'Profil saya' : 'Siapa Anda?'}">${hhAvatar}</button>
+      <div class="hh-text"><h1>Halo ${esc(greet)},</h1><p>${m ? esc(hhSub) : `<button class="hh-who" data-action="me">Siapa Anda? Ketuk untuk memilih nama</button>`}</p></div>
       <button class="toggle ${isAdmin() ? 'on' : ''}" data-action="toggle-admin" aria-label="Mode admin ${isAdmin() ? 'aktif' : 'nonaktif'}" title="Mode Admin"><span>ON</span><span>OFF</span></button>
       <button class="bell" data-action="notif" aria-label="Pengingat">${BELL}${notif ? '<span class="dot"></span>' : ''}</button>
     </div>
   </header>
   <div class="hero-wrap">
     <div class="hero">${hero}</div>
-    <div class="hero-cta"><button data-action="${iu.list.length ? 'catat-iuran' : 'nav-kas'}">${iu.list.length ? 'Catat Iuran' : 'Lihat Kas'} <i>→</i></button></div>
+    <div class="hero-cta">${isAdmin() ? `<button data-action="${iu.list.length ? 'catat-iuran' : 'nav-kas'}">${iu.list.length ? 'Catat Iuran' : 'Lihat Kas'} <i>→</i></button>`
+      : `<button data-action="add-berita">Tulis Kabar <i>→</i></button>`}</div>
   </div>
 
   <section class="section" style="margin-top:42px">
@@ -329,6 +352,8 @@ VIEWS.home = function () {
     <div class="dots" id="menu-dots"><i class="on"></i><i></i></div>
   </section>
 
+  ${activeStrip()}
+
   ${latest.length ? `<section class="section">
     <div class="section-head"><h3>Kabar Keluarga</h3><button class="link" data-nav="berita">Lihat Semua</button></div>
     <div class="hscroll">${latest.map(b => `<div style="flex:0 0 84%;scroll-snap-align:start">${beritaCard(b, true)}</div>`).join('')}</div>
@@ -339,19 +364,22 @@ VIEWS.home = function () {
     <div class="hscroll">
       <button class="kcard c1" data-nav="dashboard" style="text-align:left"><h4>${esc(rpShort(saldo))}</h4><p>*Saldo kas saat ini</p>
         <div class="bar"><i style="width:${ratio}%"></i></div><div class="meta"><span>Masuk vs keluar bulan ini</span><span>${ratio}%</span></div></button>
-      <button class="kcard c2" data-nav="kas" style="text-align:left"><h4>${esc(rpShort(masukBln))}</h4><p>*Pemasukan ${esc(BULAN[Number(p.slice(5)) - 1])}</p>
+      <button class="kcard c2" data-nav="${isAdmin() ? 'kas' : 'dashboard'}" style="text-align:left"><h4>${esc(rpShort(masukBln))}</h4><p>*Pemasukan ${esc(BULAN[Number(p.slice(5)) - 1])}</p>
         <div class="bar"><i style="width:${masukLalu ? Math.min(100, Math.round(masukBln / masukLalu * 100)) : 100}%"></i></div>
         <div class="meta"><span>Bulan lalu ${esc(rpShort(masukLalu))}</span><span>${masukLalu ? Math.round((masukBln - masukLalu) / masukLalu * 100) + '%' : '–'}</span></div></button>
-      <button class="kcard c3" data-nav="kas" style="text-align:left"><h4>${esc(rpShort(keluarBln))}</h4><p>*Pengeluaran ${esc(BULAN[Number(p.slice(5)) - 1])}</p>
+      <button class="kcard c3" data-nav="${isAdmin() ? 'kas' : 'dashboard'}" style="text-align:left"><h4>${esc(rpShort(keluarBln))}</h4><p>*Pengeluaran ${esc(BULAN[Number(p.slice(5)) - 1])}</p>
         <div class="bar"><i style="width:${(masukBln + keluarBln) ? 100 - ratio : 0}%;background:#f87171"></i></div><div class="meta"><span>Porsi pengeluaran</span><span>${(masukBln + keluarBln) ? 100 - ratio : 0}%</span></div></button>
     </div>
   </section>
 
   <section class="section">
-    <div class="section-head"><h3>Aktivitas Terbaru</h3><button class="link" data-nav="kas">Semua</button></div>
+    <div class="section-head"><h3>Aktivitas Terbaru</h3><button class="link" data-nav="${isAdmin() ? 'kas' : 'agenda'}">Semua</button></div>
     <div class="list">
       ${nextAg ? `<button class="item" data-action="agenda-detail" data-id="${esc(nextAg.id)}"><span class="ic ev">📅</span><span class="tx"><b>${esc(nextAg.judul)}</b><small>${fmtDate(nextAg.tanggal, true)}${nextAg.jam ? ' · ' + esc(nextAg.jam) : ''}</small></span><span class="chip">Agenda</span></button>` : ''}
-      ${recent.map(kasItem).join('') || '<div class="empty"><b>Belum ada transaksi</b>Catat pemasukan pertama lewat tombol A di bawah.</div>'}
+      ${isAdmin() ? (recent.map(kasItem).join('') || '<div class="empty"><b>Belum ada transaksi</b>Catat pemasukan pertama lewat tombol A di bawah.</div>')
+        : (upcomingAgenda(60).slice(1, 4).map(a => `<button class="item" data-action="agenda-detail" data-id="${esc(a.id)}"><span class="ic ev">📅</span><span class="tx"><b>${esc(a.judul)}</b><small>${fmtDate(a.tanggal, true)}</small></span><span class="chip">Agenda</span></button>`).join('')
+          + birthdaysThisMonth().slice(0, 3).map(a => `<button class="item" data-action="person" data-id="${esc(a.id)}">${avatar(a)}<span class="tx"><b>${esc(a.nama)}</b><small>Ulang tahun ${Number(a.tgl_lahir.slice(8))} ${BULAN[Number(a.tgl_lahir.slice(5, 7)) - 1]}</small></span><span class="chip green">🎂</span></button>`).join('')
+          || (nextAg ? '' : '<div class="empty"><b>Belum ada aktivitas</b>Tambahkan agenda atau tulis kabar lewat tombol A di bawah.</div>'))}
     </div>
   </section>`;
 };
@@ -401,7 +429,7 @@ VIEWS.anggota = function () {
       <div class="list">${groups[g].map(item).join('')}</div>`).join('');
   }
   return subhead('Data Keluarga', {
-    action: addBtn('add-anggota', 'Tambah anggota'),
+    action: addBtn('add-anggota', 'Tambah anggota', 'anggota'),
     extra: `<label class="search">${SEARCH_IC}<input id="q-anggota" type="search" placeholder="Cari nama, pekerjaan, kota, generasi…" value="${esc(f.q)}" aria-label="Cari anggota"></label>`
   }) + `<div class="page">
     <div class="filters">${pills.map(p => `<button class="pill ${f.f === p[0] ? 'active' : ''}" data-action="f-anggota" data-v="${p[0]}">${p[1]}</button>`).join('')}</div>
@@ -432,7 +460,7 @@ function personDetail(id) {
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
         <span class="chip">${a.jenis_kelamin === 'P' ? 'Perempuan' : 'Laki-laki'}</span><span class="chip gen-${Math.min(ix.gen[id], 7)}">${esc(genText(ix.gen[id]))}</span>
         ${alive(a) ? '<span class="chip green">Hidup</span>' : '<span class="chip gray">Almarhum' + (a.jenis_kelamin === 'P' ? 'ah' : '') + '</span>'}
-        ${wajib(a) ? '<span class="chip amber">Wajib iuran</span>' : ''}</div></div></div>
+        ${wajib(a) ? '<span class="chip amber">Wajib iuran</span>' : ''}${S.data.me === id ? '<span class="chip">Ini Anda</span>' : ''}</div></div></div>
     <dl class="dl">
       ${a.panggilan ? `<dt>Panggilan</dt><dd>${esc(a.panggilan)}</dd>` : ''}
       ${ttl ? `<dt>Lahir</dt><dd>${esc(ttl)}${age(a) !== '' ? ' (' + age(a) + ' th)' : ''}</dd>` : ''}
@@ -448,7 +476,7 @@ function personDetail(id) {
     ${rel(parents, 'Orang tua')}${rel(spouseIds(a), 'Pasangan')}${rel(siblings, 'Saudara kandung')}${rel(kids, 'Anak')}
     <div class="btn-row" style="margin-top:18px"><button class="btn dark" data-action="tree-focus" data-id="${esc(id)}">Lihat di Pohon</button>
       ${isAdmin() ? `<button class="btn ghost" data-action="edit-anggota" data-id="${esc(id)}">Edit</button>` : ''}</div>
-    ${isAdmin() ? `<div class="btn-row"><button class="btn ghost" data-action="add-child" data-id="${esc(id)}">+ Tambah anak</button><button class="btn danger" data-action="del-anggota" data-id="${esc(id)}">Hapus</button></div>` : ''}`);
+    ${isMember() ? `<div class="btn-row"><button class="btn ghost" data-action="add-child" data-id="${esc(id)}">+ Tambah anak</button>${isAdmin() ? `<button class="btn danger" data-action="del-anggota" data-id="${esc(id)}">Hapus</button>` : ''}</div>` : ''}`);
 }
 
 function formAnggota(a, preset) {
@@ -492,7 +520,7 @@ function formAnggota(a, preset) {
     <div class="row2"><div class="field"><label for="fa-lat">Latitude</label><input class="input" id="fa-lat" name="lat" inputmode="decimal" value="${esc(a.lat || '')}"></div>
       <div class="field"><label for="fa-lng">Longitude</label><input class="input" id="fa-lng" name="lng" inputmode="decimal" value="${esc(a.lng || '')}"></div></div>
     <button type="button" class="btn ghost sm" data-action="pick-map" style="margin:-4px 0 12px">📍 Pilih di peta</button><div id="picker"></div>
-    <label style="display:flex;gap:10px;align-items:center;font-size:14px;margin:6px 0 12px"><input type="checkbox" name="wajib_iuran" ${wajib(a) ? 'checked' : ''}> Wajib membayar iuran bulanan</label>
+    ${isAdmin() ? `<label style="display:flex;gap:10px;align-items:center;font-size:14px;margin:6px 0 12px"><input type="checkbox" name="wajib_iuran" ${wajib(a) ? 'checked' : ''}> Wajib membayar iuran bulanan</label>` : ''}
     <div class="field"><label for="fa-ct">Catatan</label><textarea class="input" id="fa-ct" name="catatan">${esc(a.catatan || '')}</textarea></div>
     <button class="btn primary block" type="submit">Simpan</button>
   </form>`, body => {
@@ -519,7 +547,11 @@ function formAnggota(a, preset) {
       if (!d.nama) return showErr(f, 'Nama wajib diisi.');
       if (!d.jenis_kelamin) return showErr(f, 'Jenis kelamin wajib dipilih.');
       busy(btn, true);
-      try { await api('apiSaveAnggota', S.token, d); closeSheet(); toast('Data anggota tersimpan', 'ok'); await reload(); }
+      try {
+        const saved = await api('apiSaveAnggota', AUTH(), d); closeSheet(); toast('Data anggota tersimpan', 'ok');
+        if (S.pendingIdentify && saved && saved.id && !d.id) { S.pendingIdentify = false; await api('apiIdentify', AUTH(), saved.id, deviceLabel()); }
+        await reload();
+      }
       catch (e) { showErr(f, e.message); handleAuthErr(e); } finally { busy(btn, false); }
     };
   });
@@ -723,7 +755,7 @@ function formKas(k, preset) {
       if (!Number(d.jumlah)) return showErr(f, 'Jumlah harus lebih dari 0.');
       if ($('#fk-pw', f).classList.contains('hidden')) d.periode = '';
       busy(btn, true);
-      try { const r = await api('apiSaveKas', S.token, d); upsert('kas', r); closeSheet(); toast('Transaksi tersimpan', 'ok'); render(); }
+      try { const r = await api('apiSaveKas', AUTH(), d); upsert('kas', r); closeSheet(); toast('Transaksi tersimpan', 'ok'); render(); }
       catch (e) { showErr(f, e.message); handleAuthErr(e); } finally { busy(btn, false); }
     };
   });
@@ -881,8 +913,8 @@ VIEWS.dashboard = function () {
   return subhead('Dashboard Keuangan', { action: `<select class="input" id="dash-year" style="width:96px;height:38px;padding:4px 8px;background:#fff;color:#0f1b33" aria-label="Tahun">${yearOptions(y)}</select>` }) + `<div class="page">
     <div class="kpis">
       <div class="kpi dark" style="grid-column:1/-1"><small>Saldo kas saat ini</small><b style="font-size:26px">${esc(rp(saldoNow))}</b><span class="delta" style="color:${tIn >= tOut ? '#86efac' : '#fca5a5'}">${tIn >= tOut ? '▲' : '▼'} ${esc(rp(Math.abs(tIn - tOut)))} sepanjang ${y}</span></div>
-      <div class="kpi"><small>Pemasukan ${y}</small><b class="in">${esc(rpShort(tIn))}</b><span class="delta" style="color:var(--muted)">${S.data.kas.filter(k => inY(k) && k.jenis === 'Masuk').length} transaksi</span></div>
-      <div class="kpi"><small>Pengeluaran ${y}</small><b class="out">${esc(rpShort(tOut))}</b><span class="delta" style="color:var(--muted)">${S.data.kas.filter(k => inY(k) && k.jenis === 'Keluar').length} transaksi</span></div>
+      <div class="kpi"><small>Pemasukan ${y}</small><b class="in">${esc(rpShort(tIn))}</b><span class="delta" style="color:var(--muted)">${S.data.kasRingkas ? 'ringkasan' : S.data.kas.filter(k => inY(k) && k.jenis === 'Masuk').length + ' transaksi'}</span></div>
+      <div class="kpi"><small>Pengeluaran ${y}</small><b class="out">${esc(rpShort(tOut))}</b><span class="delta" style="color:var(--muted)">${S.data.kasRingkas ? 'ringkasan' : S.data.kas.filter(k => inY(k) && k.jenis === 'Keluar').length + ' transaksi'}</span></div>
     </div>
     ${ins.length ? `<div class="insight" style="margin-top:12px"><span>💡</span><div>${ins.map(s => `<div style="margin-bottom:4px">${s}</div>`).join('')}</div></div>` : ''}
     <div class="card chart-card" style="margin-top:12px"><h4>Arus kas bulanan</h4><p class="sub">Pemasukan vs pengeluaran ${y}</p><div class="chart">${barChart(masuk, keluar)}</div>
@@ -896,7 +928,7 @@ VIEWS.dashboard = function () {
     <div class="card chart-card" style="margin-top:12px"><h4>Komposisi pemasukan</h4><p class="sub">Per kategori, ${y}</p>${donut(byCat('Masuk'))}</div>
     <div class="card chart-card" style="margin-top:12px"><h4>Kontributor terbesar</h4><p class="sub">Total setoran anggota ${y}</p>
       ${top.length ? top.map(([id, v], i) => `<div class="rank"><span class="n">${i + 1}</span>${avatar(index().byId[id])}<span style="flex:1">${esc(nameOf(id) || '(terhapus)')}</span><b>${esc(rp(v))}</b></div>`).join('') : '<p class="empty" style="padding:8px">Belum ada setoran yang terkait anggota.</p>'}</div>
-    <button class="btn ghost block" style="margin-top:14px" data-nav="laporan">Buka laporan lengkap →</button>
+    ${isAdmin() ? '<button class="btn ghost block" style="margin-top:14px" data-nav="laporan">Buka laporan lengkap →</button>' : '<p style="text-align:center;color:var(--muted);font-size:12px;margin:14px 0 0">Ringkasan keuangan. Rincian transaksi dan laporan hanya untuk Admin.</p>'}
   </div>`;
 };
 VIEWS.dashboard.after = () => { const s = $('#dash-year'); if (s) s.onchange = () => { S.dash.year = Number(s.value); render(); }; };
@@ -949,7 +981,7 @@ VIEWS.agenda = function () {
   const past = S.data.agenda.filter(a => a.tanggal < t).sort((a, b) => b.tanggal.localeCompare(a.tanggal));
   const list = tab === 'mendatang' ? up : past;
   const bd = birthdaysThisMonth();
-  return subhead('Agenda Keluarga', { action: addBtn('add-agenda', 'Tambah agenda') }) + `<div class="page">
+  return subhead('Agenda Keluarga', { action: addBtn('add-agenda', 'Tambah agenda', 'agenda') }) + `<div class="page">
     <div class="seg">${[['mendatang', 'Mendatang (' + up.length + ')'], ['lalu', 'Sudah lewat (' + past.length + ')']].map(x => `<button class="${tab === x[0] ? 'active' : ''}" data-action="f-agenda" data-v="${x[0]}">${x[1]}</button>`).join('')}</div>
     <div class="list" style="margin-top:12px">${list.map(a => {
       const [, m, d] = a.tanggal.split('-'); const days = Math.round((new Date(a.tanggal) - new Date(t)) / 864e5);
@@ -994,7 +1026,7 @@ function formAgenda(a) {
       ev.preventDefault(); const f = ev.target, btn = $('button[type=submit]', f), d = formData(f);
       if (!d.judul) return showErr(f, 'Judul wajib diisi.');
       busy(btn, true);
-      try { const r = await api('apiSaveAgenda', S.token, d); upsert('agenda', r); closeSheet(); toast('Agenda tersimpan', 'ok'); render(); }
+      try { const r = await api('apiSaveAgenda', AUTH(), d); upsert('agenda', r); closeSheet(); toast('Agenda tersimpan', 'ok'); render(); }
       catch (e) { showErr(f, e.message); handleAuthErr(e); } finally { busy(btn, false); }
     };
   });
@@ -1045,7 +1077,7 @@ function formFoto() {
       if (!d.foto_url && $('#ff-url', f).value) d.foto_url = $('#ff-url', f).value.trim();
       if (!d.foto_url) return showErr(f, 'Pilih foto atau isi URL gambar.');
       busy(btn, true);
-      try { const r = await api('apiSaveGaleri', S.token, d); upsert('galeri', r); closeSheet(); toast('Foto tersimpan', 'ok'); render(); }
+      try { const r = await api('apiSaveGaleri', AUTH(), d); upsert('galeri', r); closeSheet(); toast('Foto tersimpan', 'ok'); render(); }
       catch (e) { showErr(f, e.message); handleAuthErr(e); } finally { busy(btn, false); }
     };
   });
@@ -1062,7 +1094,7 @@ function uploadPicked(input, cb) {
     c.width = Math.round(img.width * k); c.height = Math.round(img.height * k); c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
     const data = c.toDataURL('image/jpeg', 0.85);
     toast('Mengunggah foto…');
-    try { const r = await api('apiUploadImage', S.token, data, file.name.replace(/\.\w+$/, '') + '.jpg'); cb(r.url, r.file_id); toast('Foto terunggah', 'ok'); }
+    try { const r = await api('apiUploadImage', AUTH(), data, file.name.replace(/\.\w+$/, '') + '.jpg'); cb(r.url, r.file_id); toast('Foto terunggah', 'ok'); }
     catch (e) { toast(e.message, 'error'); handleAuthErr(e); } finally { if (lbl) lbl.style.opacity = ''; }
   };
   img.onerror = () => toast('Gambar tidak bisa dibaca', 'error');
@@ -1087,7 +1119,7 @@ function loadLeaflet() {
 VIEWS.peta = function () {
   const withLoc = S.data.anggota.filter(a => a.lat && a.lng), agLoc = S.data.agenda.filter(a => a.lat && a.lng);
   return subhead('Peta Keluarga') + `<div class="page">
-    <p style="font-size:12px;color:var(--muted);margin:0 4px 10px">${withLoc.length} rumah anggota · ${agLoc.length} lokasi agenda${S.role === 'tamu' ? ' · Lokasi rumah hanya tampil setelah login PIN keluarga.' : ''}</p>
+    <p style="font-size:12px;color:var(--muted);margin:0 4px 10px">${withLoc.length} rumah anggota · ${agLoc.length} lokasi agenda</p>
     <div id="map" class="map"></div>
     ${!withLoc.length && !agLoc.length ? '<div class="empty"><b>Belum ada koordinat</b>Isi latitude/longitude di data anggota atau agenda (tombol "Pilih di peta").</div>' : ''}
   </div>`;
@@ -1206,8 +1238,8 @@ function beritaDetail(id) {
   const m = bMeta(b.kategori), p = index().byId[b.penulis_id];
   const tags = String(b.terkait_ids || '').split(',').filter(Boolean).map(i => index().byId[i]).filter(Boolean);
   const kom = komentarOf(id);
-  const me = store.get('af_me') || '';
-  const memberOpts = S.data.anggota.filter(alive).sort((x, y) => x.nama.localeCompare(y.nama)).map(a => `<option value="${esc(a.id)}" ${a.id === me ? 'selected' : ''}>${esc(a.nama)}</option>`).join('');
+  const meId = (me() && me().id) || store.get('af_me') || '';
+  const memberOpts = S.data.anggota.filter(alive).sort((x, y) => x.nama.localeCompare(y.nama)).map(a => `<option value="${esc(a.id)}" ${a.id === meId ? 'selected' : ''}>${esc(a.nama)}</option>`).join('');
   openSheet(m[0] + ' ' + b.kategori, `
     <div class="news-head" style="margin-bottom:10px">${avatar(p)}<div class="news-by"><b>${esc(p ? p.nama : 'Anggota')}</b><small>${esc(timeAgo(b.created_at))}${b.created_by === 'admin' ? ' · via admin' : ''}</small></div></div>
     ${b.status !== 'Terbit' ? `<p class="insight" style="margin:0 0 10px">Status: <b>${esc(b.status)}</b>. Berita ini belum terlihat oleh anggota lain.</p>` : ''}
@@ -1231,14 +1263,14 @@ function beritaDetail(id) {
       if (!d.penulis_id) return showErr(f, 'Pilih nama Anda dulu.');
       if (!d.isi) return;
       d.berita_id = id; busy(btn, true);
-      try { const r = await api('apiSaveKomentar', S.token, d); store.set('af_me', d.penulis_id); S.data.komentar.push(r); beritaDetail(id); render(); }
+      try { const r = await api('apiSaveKomentar', AUTH(), d); store.set('af_me', d.penulis_id); S.data.komentar.push(r); beritaDetail(id); render(); }
       catch (e) { showErr(f, e.message); handleAuthErr(e); } finally { busy(btn, false); }
     };
   });
 }
 
 function formBerita(b) {
-  b = Object.assign({ kategori: 'Kabar Gembira', penulis_id: store.get('af_me') || '' }, b || {});
+  b = Object.assign({ kategori: 'Kabar Gembira', penulis_id: (me() && me().id) || store.get('af_me') || '' }, b || {});
   const kats = S.data.beritaKategori || Object.keys(BERITA_META);
   const tags = String(b.terkait_ids || '').split(',');
   const people = S.data.anggota.filter(a => alive(a) || tags.includes(a.id)).sort((x, y) => x.nama.localeCompare(y.nama));
@@ -1265,13 +1297,104 @@ function formBerita(b) {
       if (!d.isi) return showErr(f, 'Isi berita masih kosong.');
       busy(btn, true);
       try {
-        const r = await api('apiSaveBerita', S.token, d); store.set('af_me', d.penulis_id);
+        const r = await api('apiSaveBerita', AUTH(), d); store.set('af_me', d.penulis_id);
         if (r.status === 'Terbit' || isAdmin()) upsert('berita', r);
         closeSheet(); toast(r.status === 'Menunggu' ? 'Terkirim. Menunggu persetujuan admin.' : 'Berita diterbitkan', 'ok');
         if (S.view !== 'berita') go('berita'); else render();
       } catch (e) { showErr(f, e.message); handleAuthErr(e); } finally { busy(btn, false); }
     };
   });
+}
+
+/* ===================== PENGENALAN PERANGKAT ("Siapa Anda?") ===================== */
+// Perangkat diberi kode acak yang disimpan di HP. Server menghubungkan kode itu dengan nama anggota.
+// Ini untuk MENGENALI pemakai (sapaan, penulis otomatis, log), bukan untuk hak akses.
+const memLS = {};
+const localStore = {
+  get(k) { try { return localStorage.getItem(k); } catch (e) { return memLS[k] || null; } },
+  set(k, v) { try { v === null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch (e) { memLS[k] = v; } }
+};
+function deviceId() {
+  let d = localStore.get('af_device');
+  if (!d || d.length < 12) {
+    d = (window.crypto && crypto.randomUUID ? crypto.randomUUID() : 'd' + Date.now().toString(36) + Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2)).replace(/[^\w-]/g, '');
+    localStore.set('af_device', d);
+  }
+  return d;
+}
+function AUTH() { return (S.token || '') + '#' + deviceId(); }
+function me() { return S.data && S.data.me ? (index().byId[S.data.me] || null) : null; }
+function meName(a) { a = a || me(); return a ? (a.panggilan || a.nama.replace(/^(h\.|hj\.)\s*/i, '').split(' ')[0]) : ''; }
+function deviceLabel() {
+  const u = navigator.userAgent || '';
+  const os = /iPhone|iPad/.test(u) ? 'iPhone' : /Android/.test(u) ? 'Android' : /Windows/.test(u) ? 'Windows' : /Mac OS/.test(u) ? 'Mac' : /Linux/.test(u) ? 'Linux' : 'Perangkat';
+  const br = /Edg\//.test(u) ? 'Edge' : /SamsungBrowser/.test(u) ? 'Samsung Internet' : /CriOS|Chrome\//.test(u) ? 'Chrome' : /Firefox|FxiOS/.test(u) ? 'Firefox' : /Safari/.test(u) ? 'Safari' : 'Browser';
+  return os + ' · ' + br;
+}
+function activeAgo(iso) {
+  const m = (Date.now() - new Date(String(iso).replace(' ', 'T')).getTime()) / 60000;
+  if (isNaN(m)) return '';
+  return m < 10 ? 'online' : timeAgo(iso);
+}
+function maybeIdentify() {
+  if (window.AF_ADMIN || !S.data || S.data.needLogin || me() || !S.data.anggota.length) return;
+  if (Date.now() - Number(localStore.get('af_identify_skip') || 0) < 3 * 864e5) return;
+  setTimeout(() => { if ($('#sheet').hidden && !me()) identifySheet(); }, 500);
+}
+function identifySheet() {
+  const ix = index();
+  const people = S.data.anggota.filter(alive).sort((a, b) => ix.gen[a.id] - ix.gen[b.id] || a.nama.localeCompare(b.nama));
+  openSheet('Selamat datang! 👋', `
+    <p style="margin:0 0 12px;color:#334155;font-size:14px;line-height:1.5">Siapa Anda? Pilih nama Anda <b>sekali saja</b>. Perangkat ini akan diingat, dan aplikasi langsung menyapa Anda setiap kali dibuka.</p>
+    <label class="search" style="box-shadow:none;border:1.5px solid var(--line)">${SEARCH_IC}<input id="id-q" type="search" placeholder="Ketik nama Anda…" aria-label="Cari nama Anda" autocomplete="off"></label>
+    <div id="id-list" class="list" style="margin-top:10px;max-height:46vh;overflow-y:auto;padding:2px"></div>
+    <div class="btn-row"><button class="btn ghost" data-action="identify-new">Nama saya belum ada</button><button class="btn ghost" data-action="identify-skip">Nanti saja</button></div>
+    <p style="font-size:11px;color:var(--muted);margin:10px 0 0;line-height:1.5">Nama dipakai untuk menyapa Anda dan mencatat penulis kabar. Pilihan ini tidak menambah hak akses.</p>`, body => {
+    const q = $('#id-q', body), box = $('#id-list', body);
+    const draw = () => {
+      const k = q.value.trim().toLowerCase();
+      const rows = people.filter(a => !k || (a.nama + ' ' + a.panggilan).toLowerCase().includes(k)).slice(0, 60);
+      box.innerHTML = rows.map(a => {
+        const ortu = [nameOf(a.ayah_id), nameOf(a.ibu_id)].filter(Boolean).join(' & ');
+        return `<button class="item" data-action="identify-pick" data-id="${esc(a.id)}">${avatar(a)}<span class="tx"><b>${esc(a.nama)}</b><small>Gen ${ix.gen[a.id]} · ${esc(ortu ? 'anak ' + ortu : genLabel(ix.gen[a.id]))}</small></span></button>`;
+      }).join('') || '<div class="empty" style="padding:14px">Nama tidak ditemukan. Ketuk <b>Nama saya belum ada</b> untuk mendaftar.</div>';
+    };
+    q.addEventListener('input', draw); draw();
+  });
+}
+async function identifyAs(id) {
+  toast('Menyimpan…');
+  try {
+    await api('apiIdentify', AUTH(), id, deviceLabel());
+    S.data.me = id; localStore.set('af_identify_skip', null);
+    const nm = meName(); toast(`Halo ${nm}! Perangkat ini sudah dikenali.`, 'ok');
+    S.data.aktif = [{ anggota_id: id, last_seen: nowLocalIso() }].concat((S.data.aktif || []).filter(x => x.anggota_id !== id));
+    render();
+  } catch (e) { toast(e.message, 'error'); }
+}
+function meSheet() {
+  const m = me(); if (!m) return identifySheet();
+  openSheet('Profil Saya', `
+    <div class="detail-head">${avatar(m)}<div><h3 style="margin:0;font-size:19px">${esc(m.nama)}</h3>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px"><span class="chip gen-${Math.min(index().gen[m.id], 7)}">${esc(genText(index().gen[m.id]))}</span><span class="chip ${isAdmin() ? '' : 'gray'}">${isAdmin() ? 'Admin' : 'Anggota'}</span></div></div></div>
+    <p style="font-size:12px;color:var(--muted);margin:0 0 12px">Perangkat ini: ${esc(deviceLabel())}. Dikenali tanpa login, sampai Anda melepasnya.</p>
+    <div class="list">
+      <button class="item" data-action="person" data-id="${esc(m.id)}"><span class="ic ev">👤</span><span class="tx"><b>Lihat profil lengkap</b><small>Orang tua, pasangan, anak, garis silsilah</small></span></button>
+      <button class="item" data-action="tree-focus" data-id="${esc(m.id)}"><span class="ic ev">🌳</span><span class="tx"><b>Posisi saya di pohon keluarga</b></span></button>
+      <button class="item" data-action="add-berita"><span class="ic ev">📰</span><span class="tx"><b>Tulis kabar</b></span></button>
+      <button class="item" data-action="identify-change"><span class="ic ev">🔄</span><span class="tx"><b>Bukan saya / ganti nama</b><small>Pilih nama lain untuk perangkat ini</small></span></button>
+      <button class="item" data-action="device-forget"><span class="ic out">⏏</span><span class="tx"><b>Lepas perangkat ini</b><small>Untuk HP pinjaman atau perangkat bersama</small></span></button>
+    </div>`);
+}
+function activeStrip() {
+  const list = (S.data.aktif || []).filter(x => index().byId[x.anggota_id]).slice(0, 15);
+  if (!list.length) return '';
+  const meId = S.data.me;
+  return `<section class="section">
+    <div class="section-head"><h3>Keluarga yang Baru Aktif</h3><span style="font-size:12px;color:var(--muted)">${list.length} orang · 7 hari</span></div>
+    <div class="act-strip">${list.map(x => { const a = index().byId[x.anggota_id], ago = activeAgo(x.last_seen);
+      return `<button class="act-item" data-action="person" data-id="${esc(a.id)}"><span class="act-av">${avatar(a)}${ago === 'online' ? '<i class="dot-on" title="online"></i>' : ''}</span><b>${esc(a.id === meId ? 'Anda' : meName(a))}</b><small>${esc(ago)}</small></button>`; }).join('')}</div>
+  </section>`;
 }
 
 /* ===================== CARI ===================== */
@@ -1288,7 +1411,7 @@ VIEWS.cari = function () {
     res = sec('Anggota', ag.length ? `<div class="list">${ag.map(a => `<button class="item" data-action="person" data-id="${esc(a.id)}">${avatar(a)}<span class="tx"><b>${esc(a.nama)}</b><small>${esc(a.pekerjaan || years(a))}</small></span></button>`).join('')}</div>` : '')
       + sec('Agenda', ev.length ? `<div class="list">${ev.map(a => `<button class="item" data-action="agenda-detail" data-id="${esc(a.id)}"><span class="ic ev">📅</span><span class="tx"><b>${esc(a.judul)}</b><small>${fmtDate(a.tanggal)}</small></span></button>`).join('')}</div>` : '')
       + sec('Kabar keluarga', br.length ? `<div class="news-list">${br.map(b => beritaCard(b, true)).join('')}</div>` : '')
-      + sec('Transaksi', ks.length ? `<div class="list">${ks.map(kasItem).join('')}</div>` : '')
+      + sec('Transaksi', isAdmin() && ks.length ? `<div class="list">${ks.map(kasItem).join('')}</div>` : '')
       + sec('Galeri', gl.length ? `<div class="gallery">${gl.map(g => `<button data-action="foto" data-id="${esc(g.id)}"><img src="${esc(g.foto_url)}" alt="${esc(g.judul)}" loading="lazy" referrerpolicy="no-referrer"></button>`).join('')}</div>` : '');
     if (!res) res = '<div class="empty"><b>Tidak ditemukan</b>Coba kata kunci lain.</div>';
   } else res = '<div class="empty">Ketik minimal 2 huruf untuk mencari anggota, agenda, transaksi, atau foto.</div>';
@@ -1298,11 +1421,11 @@ VIEWS.cari.after = () => { bindSearch('#q-cari', v => { S.cari.q = v; }); if (!S
 
 /* ===================== AKUN & PENGATURAN ===================== */
 VIEWS.akun = function () {
-  const st = S.data.settings, roleName = { admin: 'Admin', anggota: 'Anggota keluarga', tamu: 'Pengunjung (tanpa login)' }[S.role] || '-';
+  const st = S.data.settings, roleName = { admin: 'Admin', anggota: 'Anggota keluarga' }[S.role] || '-';
   return subhead('Akun & Pengaturan') + `<div class="page">
     <div class="card" style="display:flex;gap:14px;align-items:center"><div class="hh-avatar" style="color:#fff">${esc(initials(roleName))}</div><div style="flex:1"><small style="color:var(--muted)">Masuk sebagai</small><h3 style="margin:2px 0 0">${esc(roleName)}</h3></div></div>
     <div class="btn-row" style="margin-top:12px">${isAdmin() ? '<button class="btn ghost" data-action="logout">Keluar dari Admin</button>' : '<button class="btn primary" data-action="login-admin">Masuk sebagai Admin</button>'}
-      ${S.role === 'tamu' ? '<button class="btn ghost" data-action="login-member">PIN keluarga</button>' : ''}${S.role === 'anggota' ? '<button class="btn ghost" data-action="logout">Keluar</button>' : ''}</div>
+${S.role === 'anggota' ? '<button class="btn ghost" data-action="logout">Keluar</button>' : ''}</div>
     <button class="btn ghost block" style="margin-top:10px" data-action="reload">⟳ Muat ulang data</button>
     ${isAdmin() && S.data.appUrl && !window.AF_ADMIN ? `<a class="btn dark block" style="margin-top:10px" href="${esc(S.data.appUrl)}?page=admin" target="_blank" rel="noopener">🖥 Buka Panel Admin (web)</a>` : ''}
     ${isAdmin() ? `
@@ -1325,10 +1448,10 @@ VIEWS.akun = function () {
 VIEWS.akun.after = function () {
   const f = $('#f-set');
   if (f) f.onsubmit = async ev => { ev.preventDefault(); const btn = $('button[type=submit]', f); busy(btn, true);
-    try { S.data.settings = await api('apiSaveSettings', S.token, formData(f)); toast('Pengaturan tersimpan', 'ok'); render(); } catch (e) { showErr(f, e.message); handleAuthErr(e); } finally { busy(btn, false); } };
+    try { S.data.settings = await api('apiSaveSettings', AUTH(), formData(f)); toast('Pengaturan tersimpan', 'ok'); render(); } catch (e) { showErr(f, e.message); handleAuthErr(e); } finally { busy(btn, false); } };
   const k = $('#f-kat');
   if (k) k.onsubmit = async ev => { ev.preventDefault(); const d = formData(k); if (!d.nama) return;
-    try { const r = await api('apiSaveKategori', S.token, d); S.data.kategori.push(r); toast('Kategori ditambahkan', 'ok'); render(); } catch (e) { toast(e.message, 'error'); handleAuthErr(e); } };
+    try { const r = await api('apiSaveKategori', AUTH(), d); S.data.kategori.push(r); toast('Kategori ditambahkan', 'ok'); render(); } catch (e) { toast(e.message, 'error'); handleAuthErr(e); } };
 };
 
 /* ===================== LOGIN / SESI ===================== */
@@ -1345,23 +1468,23 @@ function bindLogin(f) {
     } catch (e) { showErr(f, e.message); f.pin.value = ''; } finally { busy(btn, false); }
   };
 }
-async function logout() { try { await api('apiLogout', S.token); } catch (e) {} S.token = null; store.set('af_token', null); toast('Anda keluar'); await reload(); }
+async function logout() { try { await api('apiLogout', AUTH()); } catch (e) {} S.token = null; store.set('af_token', null); toast('Anda keluar'); await reload(); }
 function handleAuthErr(e) { if (e && (e.code === 'FORBIDDEN' || e.code === 'AUTH_REQUIRED')) { S.token = null; store.set('af_token', null); setTimeout(reload, 1200); } }
 function requireAdminUI() { if (isAdmin()) return true; loginSheet('admin'); return false; }
 
 /* ---------- data lokal ---------- */
 function upsert(list, rec) { const arr = S.data[list]; const i = arr.findIndex(x => x.id === rec.id); if (i >= 0) arr[i] = rec; else arr.push(rec); invalidate(); }
 async function doDelete(fn, list, id) {
-  try { await api(fn, S.token, id); S.data[list] = S.data[list].filter(x => x.id !== id); invalidate(); closeSheet(); toast('Data dihapus', 'ok'); render(); }
+  try { await api(fn, AUTH(), id); S.data[list] = S.data[list].filter(x => x.id !== id); invalidate(); closeSheet(); toast('Data dihapus', 'ok'); render(); }
   catch (e) { toast(e.message, 'error'); handleAuthErr(e); }
 }
 async function reload() {
   try {
-    const d = await api('apiBootstrap', S.token);
+    const d = await api('apiBootstrap', AUTH());
     S.data = d; S.role = d.role; invalidate();
-    if (d.role && S.token && d.role === 'tamu') { S.token = null; store.set('af_token', null); }
     render();
     if (d.needLogin) bindLogin($('#login-form'));
+    maybeIdentify();
   } catch (e) {
     $('#view').innerHTML = `<div class="boot"><div class="boot-logo">!</div><p><b>Gagal memuat data</b><br>${esc(e.message)}</p><button class="btn primary" data-action="reload">Coba lagi</button></div>`;
   }
@@ -1373,6 +1496,18 @@ const ACT = {
   'toggle-admin': () => isAdmin() ? logout() : loginSheet('admin'),
   'login-admin': () => loginSheet('admin'), 'login-member': () => loginSheet('anggota'), logout,
   'nav-kas': () => go('kas'),
+  'nav-dash': () => go('dashboard'),
+  me: () => meSheet(),
+  'identify-pick': el => identifyAs(el.dataset.id),
+  'identify-skip': () => { localStore.set('af_identify_skip', String(Date.now())); toast('Baik, Anda bisa memilih nama kapan saja lewat foto di kiri atas.'); },
+  'identify-new': () => { S.pendingIdentify = true; formAnggota(); toast('Isi data Anda; setelah disimpan, perangkat ini langsung mengenali Anda.'); },
+  'identify-change': () => identifySheet(),
+  'device-forget': async () => {
+    if (!(await confirmSheet('Lepas perangkat ini?', 'Aplikasi tidak lagi menyapa Anda di perangkat ini. Anda bisa memilih nama lagi kapan saja.', 'Lepas'))) return;
+    try { await api('apiForgetDevice', AUTH()); } catch (e) {}
+    localStore.set('af_device', null); localStore.set('af_identify_skip', String(Date.now()));
+    S.data.me = ''; toast('Perangkat dilepas', 'ok'); render();
+  },
   notif() {
     const ag = upcomingAgenda(30), bd = birthdaysThisMonth(), t = todayStr();
     const nb = isMember() ? beritaBaru() : 0, np = beritaPending();
@@ -1381,7 +1516,11 @@ const ACT = {
   },
   'quick-add'() {
     if (!isAdmin()) {
-      if (S.role === 'anggota') return openSheet('Tambah cepat', `<div class="list"><button class="item" data-action="add-berita"><span class="ic ev">📰</span><span class="tx"><b>Tulis kabar keluarga</b><small>Bagikan kabar terbaru Anda</small></span></button><button class="item" data-action="login-admin"><span class="ic ev">🔐</span><span class="tx"><b>Masuk sebagai Admin</b></span></button></div>`);
+      if (isMember()) return openSheet('Tambah cepat', `<div class="list">
+        <button class="item" data-action="add-berita"><span class="ic ev">📰</span><span class="tx"><b>Tulis kabar keluarga</b><small>Bagikan kabar terbaru Anda</small></span></button>
+        <button class="item" data-action="add-anggota"><span class="ic ev">👤</span><span class="tx"><b>Tambah anggota keluarga</b><small>Anak, cucu, atau pasangan baru</small></span></button>
+        <button class="item" data-action="add-agenda"><span class="ic ev">📅</span><span class="tx"><b>Tambah agenda</b><small>Arisan, syukuran, pertemuan</small></span></button>
+        <button class="item" data-action="login-admin"><span class="ic ev">🔐</span><span class="tx"><b>Masuk sebagai Admin</b><small>Kas, laporan, dan pengaturan</small></span></button></div>`);
       return requireAdminUI();
     }
     const opt = [['add-berita', '📰', 'Tulis kabar keluarga', 'ev'], ['add-kas-in', '↓', 'Catat pemasukan', 'in'], ['add-kas-out', '↑', 'Catat pengeluaran', 'out'], ['catat-iuran', '✓', 'Catat iuran bulan ini', 'in'], ['add-anggota', '👤', 'Tambah anggota', 'ev'], ['add-agenda', '📅', 'Tambah agenda', 'ev'], ['add-foto', '📷', 'Unggah foto', 'ev']];
@@ -1396,11 +1535,11 @@ const ACT = {
   'del-kas': async el => { if (await confirmSheet('Hapus transaksi?', 'Transaksi akan dihapus dari laporan. Riwayat tetap tersimpan di sheet (is_active = FALSE).')) doDelete('apiDeleteKas', 'kas', el.dataset.id); },
   'f-kas-jenis': el => { S.kas.jenis = el.dataset.v; render(); },
   person: el => personDetail(el.dataset.id),
-  'add-anggota': () => requireAdminUI() && formAnggota(),
-  'add-child': el => { if (index().gen[el.dataset.id] >= MAX_GEN) return toast('Anggota ini generasi ke-' + MAX_GEN + ' (batas aplikasi).', 'error'); const p = index().byId[el.dataset.id]; const sp = spouseIds(p).map(s => index().byId[s]).find(Boolean);
+  'add-anggota': () => requireMemberUI() && formAnggota(),
+  'add-child': el => { if (!requireMemberUI()) return; if (index().gen[el.dataset.id] >= MAX_GEN) return toast('Anggota ini generasi ke-' + MAX_GEN + ' (batas aplikasi).', 'error'); const p = index().byId[el.dataset.id]; const sp = spouseIds(p).map(s => index().byId[s]).find(Boolean);
     const pre = {}; pre[p.jenis_kelamin === 'P' ? 'ibu_id' : 'ayah_id'] = p.id; if (sp) pre[sp.jenis_kelamin === 'P' ? 'ibu_id' : 'ayah_id'] = sp.id; formAnggota(null, pre); },
   'edit-anggota': el => formAnggota(index().byId[el.dataset.id]),
-  'del-anggota': async el => { if (await confirmSheet('Hapus anggota?', 'Anggota disembunyikan dari aplikasi. Data tetap tersimpan di sheet dan bisa dipulihkan dengan mengubah is_active menjadi TRUE.')) { try { await api('apiDeleteAnggota', S.token, el.dataset.id); toast('Anggota dihapus', 'ok'); await reload(); } catch (e) { toast(e.message, 'error'); handleAuthErr(e); } } },
+  'del-anggota': async el => { if (await confirmSheet('Hapus anggota?', 'Anggota disembunyikan dari aplikasi. Data tetap tersimpan di sheet dan bisa dipulihkan dengan mengubah is_active menjadi TRUE.')) { try { await api('apiDeleteAnggota', AUTH(), el.dataset.id); toast('Anggota dihapus', 'ok'); await reload(); } catch (e) { toast(e.message, 'error'); handleAuthErr(e); } } },
   'f-anggota': el => { S.anggota.f = el.dataset.v; render(); },
   'tree-focus': el => { closeSheet(); const id = el.dataset.id, T = S.tree;
     if (!(id === T.rootId || descendants(T.rootId).has(id) || spouseIds(index().byId[T.rootId]).includes(id))) T.rootId = topAncestor(id);
@@ -1424,7 +1563,7 @@ const ACT = {
     render(); },
   'lap-csv': exportLaporan, 'lap-print': () => window.print(),
   'agenda-detail': el => agendaDetail(el.dataset.id),
-  'add-agenda': () => requireAdminUI() && formAgenda(),
+  'add-agenda': () => requireMemberUI() && formAgenda(),
   'edit-agenda': el => formAgenda(S.data.agenda.find(a => a.id === el.dataset.id)),
   'del-agenda': async el => { if (await confirmSheet('Hapus agenda?', 'Agenda akan disembunyikan dari aplikasi.')) doDelete('apiDeleteAgenda', 'agenda', el.dataset.id); },
   'f-agenda': el => { S.agenda.tab = el.dataset.v; render(); },
@@ -1436,13 +1575,13 @@ const ACT = {
   'berita-detail': el => beritaDetail(el.dataset.id),
   'edit-berita': el => formBerita(S.data.berita.find(b => b.id === el.dataset.id)),
   'del-berita': async el => { if (await confirmSheet('Hapus berita?', 'Berita dan komentarnya disembunyikan dari aplikasi. Data tetap ada di sheet.')) doDelete('apiDeleteBerita', 'berita', el.dataset.id); },
-  'berita-mod': async el => { try { const r = await api('apiModerasiBerita', S.token, el.dataset.id, el.dataset.v); upsert('berita', r);
+  'berita-mod': async el => { try { const r = await api('apiModerasiBerita', AUTH(), el.dataset.id, el.dataset.v); upsert('berita', r);
       toast({ terbit: 'Berita diterbitkan', tolak: 'Berita ditolak', sematkan: 'Berita disematkan di atas', lepas: 'Sematan dilepas' }[el.dataset.v], 'ok'); render(); if (el.dataset.reopen) beritaDetail(r.id); }
     catch (e) { toast(e.message, 'error'); handleAuthErr(e); } },
   'berita-react': async el => { const id = el.dataset.id; if (reacted(id)) return toast('Anda sudah memberi tanggapan');
     const b = S.data.berita.find(x => x.id === id); markReacted(id); b.reaksi = (b.reaksi || 0) + 1; render();
-    try { b.reaksi = await api('apiReaksiBerita', S.token, id); render(); } catch (e) { toast(e.message, 'error'); } },
-  'del-komentar': async el => { try { await api('apiDeleteKomentar', S.token, el.dataset.id); S.data.komentar = S.data.komentar.filter(k => k.id !== el.dataset.id); render(); beritaDetail(el.dataset.b); } catch (e) { toast(e.message, 'error'); } },
+    try { b.reaksi = await api('apiReaksiBerita', AUTH(), id); render(); } catch (e) { toast(e.message, 'error'); } },
+  'del-komentar': async el => { try { await api('apiDeleteKomentar', AUTH(), el.dataset.id); S.data.komentar = S.data.komentar.filter(k => k.id !== el.dataset.id); render(); beritaDetail(el.dataset.b); } catch (e) { toast(e.message, 'error'); } },
   'f-berita-tab': el => { S.berita.tab = el.dataset.v; render(); },
   'f-berita-kat': el => { S.berita.kat = el.dataset.v; render(); },
   'go-ultah': () => { S.anggota.f = 'ultah'; go('anggota'); },
