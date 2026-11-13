@@ -3,35 +3,49 @@
 <head>
   <base target="_top">
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#1e3a6e">
-  <title>Asrori Fam's</title>
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" media="print" onload="this.media='all'">
-  <?!= include('Styles'); ?>
-</head>
-<body>
   <script>
   // Penjaga awal: menampilkan penyebab bila aplikasi gagal dimuat, alih-alih tertahan di layar "Memuat".
   (function () {
     function show(title, detail) {
-      var b = document.querySelector('.boot'); if (!b) return;
+      var b = document.querySelector('.boot');
+      if (!b) { if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function () { show(title, detail); }); return; }
       b.innerHTML = '<div class="boot-logo">!</div><p style="max-width:440px;padding:0 20px;line-height:1.5"><b>' + title + '</b><br>' + detail +
         '</p><button onclick="location.reload()" style="border:0;border-radius:14px;padding:12px 20px;font-weight:700;background:#2f6fed;color:#fff">Muat ulang</button>';
     }
+    function escH(x) { return String(x).replace(/[&<>]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]; }); }
+    function codeBox(lines) {
+      return '<code style="display:block;text-align:left;font-size:11px;background:#fff;border-radius:8px;padding:8px;margin:8px 0;word-break:break-all;white-space:pre-wrap">' + lines + '</code>';
+    }
+    function visible(line) {
+      // tampilkan karakter tak biasa sebagai kode heksadesimal agar perubahan tersembunyi terlihat
+      return escH(line.slice(0, 160)).replace(/[^\x20-\x7E]/g, function (c) { return '<b style="color:#b91c1c">[U+' + c.charCodeAt(0).toString(16).toUpperCase() + ']</b>'; });
+    }
     window.addEventListener('error', function (e) {
-      if (e.target && e.target !== window) return; // gagal memuat gambar/skrip luar ditangani terpisah
+      var t = e.target;
+      if (t && t !== window && t.getAttribute) {
+        var a = t.getAttribute('data-af-asset');
+        if (a) show('File tampilan tidak bisa dimuat', '<code>' + escH(a) + '</code> gagal diambil dari GitHub.<br><small>Pastikan file sudah diunggah ke repo dan GitHub Pages aktif, lalu jalankan Cek instalasi di spreadsheet.</small>');
+        return;
+      }
+      var where = e.filename && e.filename.split('#')[0] !== location.href.split('#')[0] ? e.filename.split('/').pop().split('?')[0] : 'halaman';
+      var head = (e.message || 'tidak diketahui') + ' (' + where + (e.lineno ? ', baris ' + e.lineno : '') + (e.colno ? ', kolom ' + e.colno : '') + ')';
+      var tip = '<small>Jalankan <b>Asrori Fam\'s &gt; 5. Cek instalasi</b> di spreadsheet dan kirim hasilnya bersama layar ini.</small>';
+      if (where !== 'halaman' && e.lineno) {
+        show('Terjadi kesalahan JavaScript', escH(head) + '<br><small>Mengambil baris kode…</small>');
+        fetch(e.filename).then(function (r) { return r.text(); }).then(function (txt) {
+          var L = txt.split('\n'), n = e.lineno - 1;
+          show('Terjadi kesalahan JavaScript', escH(head) + codeBox([n - 1, n].filter(function (i) { return L[i] != null; }).map(function (i) { return (i + 1) + ': ' + visible(L[i]); }).join('<br>')) + tip);
+        }).catch(function () { show('Terjadi kesalahan JavaScript', escH(head) + '<br>' + tip); });
+        return;
+      }
       var code = '';
       try {
-        var L = document.documentElement.outerHTML.split('\n'), n = (e.lineno || 0) - 2;
-        code = [L[n - 1], L[n]].filter(Boolean).map(function (x) { return x.trim().slice(0, 140).replace(/[&<>]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]; }); }).join('<br>');
+        var L2 = document.documentElement.outerHTML.split('\n'), m = (e.lineno || 0) - 2;
+        code = [L2[m - 1], L2[m]].filter(Boolean).map(visible).join('<br>');
       } catch (x) {}
-      show('Terjadi kesalahan JavaScript', (e.message || 'tidak diketahui') + (e.lineno ? ' (baris ' + e.lineno + ')' : '') +
-        (code ? '<br><code style="display:block;text-align:left;font-size:11px;background:#fff;border-radius:8px;padding:8px;margin:8px 0;word-break:break-all">' + code + '</code>' : '') +
-        (/\u2026/.test(code) ? '<small><b>Terdeteksi tanda elipsis (\u2026) di dalam kode: file terkena koreksi otomatis.</b><br></small>' : '') +
-        '<small>Kode di file Apps Script berbeda dari file rilis (biasanya berubah saat disalin-tempel). Di spreadsheet jalankan <b>Asrori Fam\'s &gt; 5. Cek instalasi</b> untuk melihat file mana, tempel ulang file itu, lalu buat Versi baru.</small>');
-    });
+      show('Terjadi kesalahan JavaScript', escH(head) + (code ? codeBox(code) : '') +
+        '<small>Tampilan masih dimuat dari file HTML di proyek Apps Script. Aktifkan sumber GitHub: <b>Asrori Fam\'s &gt; 6. Atur sumber tampilan (GitHub)</b>, lalu buat Versi baru.</small>');
+    }, true);
     setTimeout(function () {
       if (!document.querySelector('.boot')) return;
       if (!window.AF_SCRIPTS_LOADED) show('File Scripts tidak termuat', 'Pastikan file HTML bernama persis <code>Scripts</code> berisi kode lengkap (baris terakhir <code>&lt;/script&gt;</code>), simpan, lalu buat Versi baru di Kelola deployment.');
@@ -39,6 +53,15 @@
     }, 20000);
   })();
   </script>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#1e3a6e">
+  <title>Asrori Fam's</title>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" media="print" onload="this.media='all'">
+  <?!= asset('Styles'); ?>
+</head>
+<body>
   <div id="app" class="app">
     <main id="view" class="view" aria-live="polite">
       <div class="boot">
@@ -71,6 +94,6 @@
     <div id="toast" class="toast" role="status" hidden></div>
   </div>
 
-  <?!= include('Scripts'); ?>
+  <?!= asset('Scripts'); ?>
 </body>
 </html>
