@@ -220,7 +220,7 @@ function confirmSheet(title, msg, okLabel) {
     body => $$('[data-c]', body).forEach(b => b.onclick = () => { closeSheet(); res(b.dataset.c === '1'); }));
   });
 }
-function busy(btn, on) { if (!btn) return; if (on) { btn.dataset.l = btn.innerHTML; btn.innerHTML = 'Menyimpan…'; btn.disabled = true; } else { btn.innerHTML = btn.dataset.l || btn.innerHTML; btn.disabled = false; } }
+function busy(btn, on, text) { if (!btn) return; if (on) { btn.dataset.l = btn.innerHTML; btn.innerHTML = text || 'Menyimpan…'; btn.disabled = true; } else { btn.innerHTML = btn.dataset.l || btn.innerHTML; btn.disabled = false; } }
 function formData(form) { const o = {}; new FormData(form).forEach((v, k) => { o[k] = typeof v === 'string' ? v.trim() : v; }); $$('input[type=checkbox]', form).forEach(c => { o[c.name] = c.checked; }); return o; }
 function showErr(form, msg) { let e = $('.form-err', form); if (!e) { e = document.createElement('p'); e.className = 'field err form-err'; form.prepend(e); } e.textContent = msg; e.scrollIntoView({ block: 'nearest' }); }
 
@@ -519,7 +519,8 @@ function formAnggota(a, preset) {
     <div class="field"><label for="fa-al">Alamat</label><textarea class="input" id="fa-al" name="alamat">${esc(a.alamat || '')}</textarea></div>
     <div class="row2"><div class="field"><label for="fa-lat">Latitude</label><input class="input" id="fa-lat" name="lat" inputmode="decimal" value="${esc(a.lat || '')}"></div>
       <div class="field"><label for="fa-lng">Longitude</label><input class="input" id="fa-lng" name="lng" inputmode="decimal" value="${esc(a.lng || '')}"></div></div>
-    <button type="button" class="btn ghost sm" data-action="pick-map" style="margin:-4px 0 12px">📍 Pilih di peta</button><div id="picker"></div>
+    <div class="geo-row"><button type="button" class="btn primary sm" data-action="geo-me">📡 Gunakan lokasi saya</button><button type="button" class="btn ghost sm" data-action="pick-map">📍 Pilih di peta</button></div>
+    <div class="geo-status" id="geo-status" hidden></div><div id="picker"></div>
     ${isAdmin() ? `<label style="display:flex;gap:10px;align-items:center;font-size:14px;margin:6px 0 12px"><input type="checkbox" name="wajib_iuran" ${wajib(a) ? 'checked' : ''}> Wajib membayar iuran bulanan</label>` : ''}
     <div class="field"><label for="fa-ct">Catatan</label><textarea class="input" id="fa-ct" name="catatan">${esc(a.catatan || '')}</textarea></div>
     <button class="btn primary block" type="submit">Simpan</button>
@@ -539,6 +540,7 @@ function formAnggota(a, preset) {
       if (!pg) [ayahSel, ibuSel].forEach(s => { const want = Number(genSel.value) - 1; $$('optgroup', s).forEach(o => { o.label = o.label.replace(/^★ /, ''); if (o.label.startsWith('Gen ' + want + ' ')) { o.label = '★ ' + o.label; s.insertBefore(o, s.children[1]); } }); });
     };
     [ayahSel, ibuSel].forEach(s => s.addEventListener('change', syncGen)); genSel.addEventListener('change', syncGen); syncGen();
+    if (!a.lat && !a.lng && (S.pendingIdentify || (a.id && a.id === S.data.me))) setTimeout(() => geoLocate($('#f-anggota', body), true), 400);
     $('#foto-file', body).onchange = e => uploadPicked(e.target, url => { $('[name=foto_url]', body).value = url; $('#foto-prev', body).innerHTML = avatar(Object.assign({}, a, { foto_url: url })); });
     $('#f-anggota', body).onsubmit = async ev => {
       ev.preventDefault(); const f = ev.target, btn = $('button[type=submit]', f);
@@ -1018,7 +1020,8 @@ function formAgenda(a) {
     <div class="field"><label for="fg-l">Lokasi</label><input class="input" id="fg-l" name="lokasi" value="${esc(a.lokasi || '')}"></div>
     <div class="row2"><div class="field"><label for="fa-lat">Latitude</label><input class="input" id="fa-lat" name="lat" inputmode="decimal" value="${esc(a.lat || '')}"></div>
       <div class="field"><label for="fa-lng">Longitude</label><input class="input" id="fa-lng" name="lng" inputmode="decimal" value="${esc(a.lng || '')}"></div></div>
-    <button type="button" class="btn ghost sm" data-action="pick-map" style="margin:-4px 0 12px">📍 Pilih di peta</button><div id="picker"></div>
+    <div class="geo-row"><button type="button" class="btn primary sm" data-action="geo-me">📡 Gunakan lokasi saya</button><button type="button" class="btn ghost sm" data-action="pick-map">📍 Pilih di peta</button></div>
+    <div class="geo-status" id="geo-status" hidden></div><div id="picker"></div>
     <div class="field"><label for="fg-pj">Penanggung jawab</label><input class="input" id="fg-pj" name="penanggung_jawab" value="${esc(a.penanggung_jawab || '')}"></div>
     <div class="field"><label for="fg-d">Keterangan</label><textarea class="input" id="fg-d" name="deskripsi">${esc(a.deskripsi || '')}</textarea></div>
     <button class="btn primary block" type="submit">Simpan</button></form>`, body => {
@@ -1146,19 +1149,109 @@ function drawPeta() {
   if (pts.length) m.fitBounds(pts, { padding: [40, 40], maxZoom: 14 });
   setTimeout(() => m.invalidateSize(), 200);
 };
+/* ---------- Lokasi otomatis + alamat dari koordinat (v3.4) ---------- */
+function geoTarget(form) { return $('[name=alamat]', form) || $('[name=lokasi]', form); }
+function geoStatus(form, html, type) {
+  const el = $('#geo-status', form); if (!el) return;
+  el.hidden = !html; el.className = 'geo-status' + (type ? ' ' + type : ''); el.innerHTML = html || '';
+}
+function setCoords(form, la, lo, opt) {
+  opt = opt || {};
+  $('[name=lat]', form).value = Number(la).toFixed(6); $('[name=lng]', form).value = Number(lo).toFixed(6);
+  placeMarker(form, la, lo, opt);
+  fillAddress(form, la, lo);
+}
+function placeMarker(form, la, lo, opt) {
+  const P = form._pick; if (!P) return;
+  opt = opt || {}; const ll = [la, lo];
+  if (P.mk) P.mk.setLatLng(ll); else P.mk = makePickMarker(form, ll);
+  if (P.acc) { P.m.removeLayer(P.acc); P.acc = null; }
+  if (opt.accuracy && opt.accuracy > 15) P.acc = L.circle(ll, { radius: opt.accuracy, color: '#2f6fed', weight: 1, fillOpacity: .08 }).addTo(P.m);
+  if (opt.fly) P.m.setView(ll, 17);
+}
+function makePickMarker(form, ll) {
+  const mk = L.marker(ll, { draggable: true }).addTo(form._pick.m);
+  mk.on('dragend', () => { const p = mk.getLatLng(); setCoords(form, p.lat, p.lng); });
+  return mk;
+}
+// alamat diisi otomatis bila kolom kosong atau masih berisi alamat otomatis sebelumnya;
+// bila sudah diketik manual, hanya ditawarkan agar tulisan pengguna tidak tertimpa
+function fillAddress(form, la, lo) {
+  const t = geoTarget(form); if (!t) return;
+  clearTimeout(form._geoT);
+  const seq = (form._geoSeq = (form._geoSeq || 0) + 1);
+  geoStatus(form, '<span class="spin"></span> Mencari alamat titik ini…');
+  form._geoT = setTimeout(async () => {
+    try {
+      const r = await api('apiReverseGeocode', AUTH(), la, lo);
+      if (seq !== form._geoSeq || !document.body.contains(form)) return;
+      const cur = t.value.trim();
+      if (!cur || cur === form._autoAddr) {
+        t.value = r.alamat; form._autoAddr = r.alamat;
+        t.classList.add('flash'); setTimeout(() => t.classList.remove('flash'), 1200);
+        geoStatus(form, '✅ Alamat terisi otomatis. Periksa dan lengkapi RT/RW atau nomor rumah bila perlu.<small>Sumber: ' + esc(r.sumber) + '</small>', 'ok');
+      } else {
+        form._sugAddr = r.alamat;
+        geoStatus(form, '📍 Alamat di titik ini:<b>' + esc(r.alamat) + '</b><button type="button" class="btn ghost sm" data-action="geo-use">Pakai alamat ini</button>', 'ask');
+      }
+    } catch (e) {
+      if (seq !== form._geoSeq) return;
+      geoStatus(form, 'Koordinat tersimpan, tetapi alamat belum ditemukan. ' + esc(e.message || ''), 'warn');
+    }
+  }, 500);
+}
+function geoLocate(form, auto) {
+  if (!form) return;
+  if (!navigator.geolocation) { geoStatus(form, 'Perangkat ini tidak mendukung deteksi lokasi. Gunakan <b>Pilih di peta</b>.', 'warn'); return; }
+  const btn = $('[data-action=geo-me]', form); if (btn) busy(btn, true, '📡 Mendeteksi…');
+  geoStatus(form, '<span class="spin"></span> ' + (auto ? 'Mendeteksi lokasi Anda otomatis…' : 'Mendeteksi lokasi perangkat…') + '<small>Izinkan akses lokasi bila browser bertanya. Aktifkan GPS agar lebih tepat.</small>');
+  let best = null, finished = false;
+  const finish = () => {
+    if (finished) return; finished = true;
+    navigator.geolocation.clearWatch(wid); clearTimeout(tm); if (btn) busy(btn, false);
+    if (!best) return;
+    const c = best.coords, acc = Math.round(c.accuracy || 0);
+    // isi koordinat dan alamat dulu; peta menyusul (tetap jalan walau server peta lambat)
+    setCoords(form, c.latitude, c.longitude, { accuracy: acc, fly: true });
+    openPicker(form).then(() => placeMarker(form, c.latitude, c.longitude, { accuracy: acc, fly: true })).catch(() => {});
+    if (acc > 100) toast('Akurasi ±' + acc + ' m. Geser penanda ke titik rumah yang tepat.', 'error');
+    else toast('Lokasi terdeteksi (±' + acc + ' m)', 'ok');
+  };
+  // pantau beberapa detik dan ambil titik paling akurat (GPS biasanya membaik setelah 2–5 detik)
+  const wid = navigator.geolocation.watchPosition(p => {
+    if (!best || p.coords.accuracy < best.coords.accuracy) best = p;
+    if (best.coords.accuracy <= 25) finish();
+  }, err => {
+    if (best) return finish();
+    finished = true; navigator.geolocation.clearWatch(wid); clearTimeout(tm); if (btn) busy(btn, false);
+    const msg = err.code === 1
+      ? 'Akses lokasi ditolak. Buka pengaturan situs di browser, izinkan <b>Lokasi</b>, lalu ketuk lagi. Bisa juga pakai <b>Pilih di peta</b>.'
+      : err.code === 3 ? 'Sinyal lokasi lemah. Nyalakan GPS, coba di dekat jendela, atau pakai <b>Pilih di peta</b>.'
+      : 'Lokasi belum bisa dibaca. Pastikan GPS aktif, atau pakai <b>Pilih di peta</b>.';
+    geoStatus(form, msg, 'warn');
+  }, { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 });
+  const tm = setTimeout(finish, 8000);
+}
+function openPicker(form) {
+  return loadLeaflet().then(() => {
+    const box = $('#picker', form);
+    if (box.dataset.on && form._pick) return;
+    box.dataset.on = '1'; box.innerHTML = '<div id="pick-map" style="height:240px;border-radius:14px;margin-bottom:12px"></div>';
+    const lat = $('[name=lat]', form), lng = $('[name=lng]', form);
+    const has = lat.value && lng.value, start = has ? [Number(lat.value), Number(lng.value)] : [-6.9, 109.7];
+    const m = L.map($('#pick-map', form)).setView(start, has ? 16 : 8);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OSM' }).addTo(m);
+    form._pick = { m: m, mk: null, acc: null };
+    if (has) form._pick.mk = makePickMarker(form, start);
+    m.on('click', e => setCoords(form, e.latlng.lat, e.latlng.lng));
+    setTimeout(() => m.invalidateSize(), 150);
+  }).catch(() => { toast('Peta tidak tersedia. Isi koordinat manual.', 'error'); throw new Error('leaflet'); });
+}
 function mapPicker(form) {
-  if (!window.L) { toast('Memuat peta…'); loadLeaflet().then(() => mapPicker(form)).catch(() => toast('Peta tidak tersedia. Isi koordinat manual.', 'error')); return; }
   const box = $('#picker', form);
-  if (box.dataset.on) { box.innerHTML = ''; delete box.dataset.on; return; }
-  box.dataset.on = '1'; box.innerHTML = '<div id="pick-map" style="height:240px;border-radius:14px;margin-bottom:12px"></div>';
-  const lat = $('[name=lat]', form), lng = $('[name=lng]', form);
-  const start = lat.value && lng.value ? [Number(lat.value), Number(lng.value)] : [-6.9, 109.7];
-  const m = L.map('pick-map').setView(start, lat.value ? 15 : 8);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OSM' }).addTo(m);
-  let mk = lat.value ? L.marker(start).addTo(m) : null;
-  m.on('click', e => { lat.value = e.latlng.lat.toFixed(6); lng.value = e.latlng.lng.toFixed(6); if (mk) mk.setLatLng(e.latlng); else mk = L.marker(e.latlng).addTo(m); });
-  setTimeout(() => m.invalidateSize(), 150);
-  toast('Ketuk peta untuk menandai lokasi');
+  if (box.dataset.on) { box.innerHTML = ''; delete box.dataset.on; form._pick = null; return; }
+  toast('Memuat peta…');
+  openPicker(form).then(() => toast('Ketuk peta atau geser penanda. Alamat ikut menyesuaikan.')).catch(() => {});
 }
 
 /* ===================== BERITA KELUARGA ===================== */
@@ -1571,6 +1664,8 @@ const ACT = {
   foto: el => lightbox(el.dataset.id),
   'f-album': el => { S.galeri.album = el.dataset.v; render(); },
   'pick-map': el => mapPicker(el.closest('form')),
+  'geo-me': el => geoLocate(el.closest('form'), false),
+  'geo-use': el => { const f = el.closest('form'), t = geoTarget(f); if (t && f._sugAddr) { t.value = f._sugAddr; f._autoAddr = f._sugAddr; geoStatus(f, '✅ Alamat diganti sesuai titik di peta.', 'ok'); } },
   'add-berita': () => { if (!isMember()) return loginSheet('anggota'); formBerita(); },
   'berita-detail': el => beritaDetail(el.dataset.id),
   'edit-berita': el => formBerita(S.data.berita.find(b => b.id === el.dataset.id)),

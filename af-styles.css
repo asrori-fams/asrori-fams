@@ -370,3 +370,16 @@ table.tbl{width:100%;border-collapse:collapse;font-size:12px;min-width:520px}
   .kop{border-bottom:3px double #000;padding-bottom:8px;margin-bottom:12px;text-align:center}
   .kop h2{margin:0;font-size:16px}.kop p{margin:2px 0;font-size:11px}
 }
+
+/* lokasi otomatis (v3.4) */
+.geo-row{display:flex;gap:8px;flex-wrap:wrap;margin:-4px 0 10px}
+.geo-row .btn{flex:1 1 150px}
+.geo-status{font-size:12.5px;line-height:1.5;border-radius:12px;padding:10px 12px;margin:0 0 10px;background:#eef4ff;color:var(--navy)}
+.geo-status small{display:block;color:var(--muted);font-size:11px;margin-top:2px}
+.geo-status b{display:block;margin:4px 0 8px;font-weight:600}
+.geo-status.ok{background:#e9f9ef;color:#14532d}
+.geo-status.warn{background:#fff6e5;color:#7c4a03}
+.geo-status.ask{background:#f4f7fc}
+.geo-status .spin{display:inline-block;width:12px;height:12px;border:2px solid #b8cdf5;border-top-color:#2f6fed;border-radius:50%;vertical-align:-2px;margin-right:4px;animation:geospin .8s linear infinite}
+@keyframes geospin{to{transform:rotate(360deg)}}
+.input.flash{box-shadow:0 0 0 3px rgba(34,197,94,.35);border-color:#22c55e;transition:box-shadow .3s}
